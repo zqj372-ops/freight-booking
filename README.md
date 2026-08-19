@@ -1,18 +1,25 @@
 # 二掌柜订舱系统 (Freight Booking System)
 
-货代订舱自动化系统 — SO 识别 / 邮件订舱 / 账单 OCR / 订舱代理管理。
+货代订舱自动化系统 — SO 识别 / 邮件订舱 / 账单 OCR / 运单跟踪 / 订舱代理管理。
 
-**当前状态**：MVP 阶段（SO + OCR + 邮件订舱 + 代理管理）已可跑通；账单 OCR、运单跟踪、自动拉取邮件 等在下一轮叠加。
+**当前状态**：v0.2 — SO + OCR + 邮件订舱 + 账单 OCR + 运单跟踪 Kanban + 代理管理 全部可跑通。
 
-## ✨ MVP 功能
+## ✨ 功能矩阵
 
-- 📥 **SO 收件箱** — 上传 PDF / 图片，自动 PaddleOCR 识别，自动抽取船公司 / 航线 / 柜型 / ETD 等字段
-- ✏️ **字段修正** — 识别不准确的字段人工修订
-- 🎯 **一键生成 Booking** — SO 确认后自动转订舱单
-- 📧 **邮件订舱** — SMTP 发送 / 模板 (Jinja2) / 重试 / 抄送 / 附件 / 发送历史
-- 👥 **订舱代理管理** — 代理档案、收件邮箱、CC、擅长航线
-- 📜 **邮件历史** — 全部发送记录 / 失败重试 / 错误日志
-- 🐳 **Docker 一键部署** — API + UI 双容器
+| 模块 | v0.1 | v0.2 | 状态 |
+|---|---|---|---|
+| 📥 **SO 收件箱** (PaddleOCR) | ✅ | ✅ | 已稳定 |
+| ✏️ SO 字段修正 | ✅ | ✅ | 已稳定 |
+| 🎯 SO → Booking 一键生成 | ✅ | ✅ | 已稳定 |
+| 📧 **邮件订舱** (SMTP + Jinja2) | ✅ | ✅ | 已稳定 |
+| 👥 订舱代理管理 | ✅ | ✅ | 已稳定 |
+| 💰 **账单 OCR** (PaddleOCR + 规则) | - | ✅ | 已稳定 |
+| 💰 应收/应付对账 | - | ✅ | 已稳定 |
+| 🗺️ **运单跟踪 Kanban** | - | ✅ | 已稳定 |
+| 🗺️ 跟踪状态机 (9 节点) | - | ✅ | 已稳定 |
+| 🔁 自动状态节点 (创建即 BOOKED) | - | ✅ | 已稳定 |
+| 📜 邮件发送历史 | ✅ | ✅ | 已稳定 |
+| 🐳 Docker Compose | ✅ | ✅ | 已稳定 |
 
 ## 🛠 技术栈
 
@@ -101,6 +108,7 @@ freight-booking/
 
 ## 🔌 主要 API 端点
 
+### SO / 订舱
 | Method | Path | 说明 |
 |---|---|---|
 | POST | `/api/v1/so/upload` | 上传 SO, 后台跑 OCR |
@@ -110,14 +118,36 @@ freight-booking/
 | POST | `/api/v1/so/{id}/reocr` | 重新 OCR |
 | POST | `/api/v1/so/{id}/confirm` | 确认 → 生成 Booking |
 | GET | `/api/v1/bookings/` | 订舱列表 |
-| POST | `/api/v1/bookings/` | 新建订舱 |
+| POST | `/api/v1/bookings/` | 新建订舱 (自动建 BOOKED 跟踪节点) |
 | POST | `/api/v1/bookings/{id}/send` | 发订舱邮件 |
+
+### 代理 / 邮件
+| Method | Path | 说明 |
+|---|---|---|
 | GET | `/api/v1/agents/` | 代理列表 |
 | POST | `/api/v1/agents/` | 新增代理 |
 | GET | `/api/v1/emails/templates` | 邮件模板 |
-| POST | `/api/v1/emails/templates/{id}/preview` | 预览渲染 |
 | POST | `/api/v1/emails/send` | 手动发邮件 |
 | GET | `/api/v1/emails/logs` | 发送历史 |
+
+### 账单 (v0.2 新增)
+| Method | Path | 说明 |
+|---|---|---|
+| POST | `/api/v1/bills/upload` | 上传账单 (PDF/图片), 后台 OCR |
+| POST | `/api/v1/bills/` | 手动创建账单 |
+| GET | `/api/v1/bills/` | 账单列表 |
+| GET | `/api/v1/bills/{id}` | 账单详情 (含 OCR 原文 + 行项) |
+| PATCH | `/api/v1/bills/{id}` | 修正字段 |
+| POST | `/api/v1/bills/{id}/reocr` | 重新 OCR |
+| POST | `/api/v1/bills/{id}/confirm` | 财务确认入账 |
+
+### 运单跟踪 (v0.2 新增)
+| Method | Path | 说明 |
+|---|---|---|
+| GET | `/api/v1/tracking/kanban` | Kanban 看板数据 (9 列分组) |
+| GET | `/api/v1/tracking/bookings/{id}/status` | 当前状态 |
+| GET | `/api/v1/tracking/bookings/{id}/events` | 全部跟踪节点 |
+| POST | `/api/v1/tracking/bookings/{id}/events` | 手动添加节点 (校验状态机) |
 
 完整列表见 <http://localhost:8000/docs>。
 
@@ -141,13 +171,16 @@ PADDLEOCR_USE_GPU=false
 
 ## 🧠 路线图
 
-- [x] SO 收件箱 + PaddleOCR
-- [x] 邮件订舱 (SMTP + 模板)
-- [x] 订舱代理管理
-- [ ] **账单 OCR** — PaddleOCR + LLM (Gemini/GPT) 提取结构化字段
-- [ ] **运单跟踪看板** — 状态机 + 拖拽切换
-- [ ] **自动拉取订舱邮件** — IMAP 定时拉, 解析后入库
+- [x] SO 收件箱 + PaddleOCR (v0.1)
+- [x] 邮件订舱 (SMTP + 模板) (v0.1)
+- [x] 订舱代理管理 (v0.1)
+- [x] **账单 OCR** — PaddleOCR + 规则 (v0.2)
+- [x] **运单跟踪 Kanban** — 9 状态节点状态机 (v0.2)
+- [x] 自动 BOOKED 节点 (创建 booking 即记录) (v0.2)
+- [ ] **账单 LLM 增强** — Gemini/GPT 提取结构化字段
+- [ ] **IMAP 自动拉邮件** — 定时拉订舱邮件
 - [ ] **应收应付对账** — 账单 vs Booking 自动匹配
+- [ ] **船公司跟踪 API 接入** — 自动同步跟踪状态
 - [ ] **多用户 / 权限** — 主管/操作员/财务
 - [ ] **React + shadcn/ui 前端** — 替换 Streamlit
 - [ ] **微信小程序** — 移动端查看 / 审批

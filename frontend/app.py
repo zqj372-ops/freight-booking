@@ -64,6 +64,8 @@ page = st.sidebar.radio(
     [
         "📋 SO 收件箱",
         "📦 订舱管理",
+        "🗺️ 运单跟踪",
+        "💰 账单中心",
         "👥 订舱代理",
         "✉️ 邮件模板",
         "📜 发送历史",
@@ -426,6 +428,338 @@ elif page == "📜 发送历史":
             ]
         )
         st.dataframe(df, use_container_width=True, hide_index=True)
+
+
+# ============== 页面：运单跟踪 (Kanban) ==============
+
+elif page == "🗺️ 运单跟踪":
+    st.header("🗺️ 运单跟踪看板")
+
+    # 筛选
+    cols = st.columns([2, 2, 1])
+    with cols[0]:
+        search = st.text_input("搜索订舱号 / 客户名")
+    with cols[1]:
+        carrier = st.text_input("船公司")
+    with cols[2]:
+        st.write("")  # spacing
+        refresh = st.button("🔄 刷新", use_container_width=True)
+
+    try:
+        params: dict[str, Any] = {}
+        if search:
+            params["search"] = search
+        if carrier:
+            params["carrier"] = carrier.upper()
+        data = api_get("/tracking/kanban", **params)
+    except Exception as e:
+        st.error(f"加载失败: {e}")
+        st.stop()
+
+    st.caption(f"共 {data['total']} 个订舱")
+    cols = st.columns(len(data["columns"]))
+    for col, column in zip(cols, data["columns"]):
+        with col:
+            # 颜色块
+            st.markdown(
+                f"### {column['label']}\n**{column['count']}**",
+                help=f"status: {column['status']}",
+            )
+            for item in column["items"]:
+                with st.container(border=True):
+                    st.markdown(f"**{item['booking_no']}**")
+                    st.caption(f"{item['carrier']} · {item['container']}")
+                    st.caption(f"📍 {item['pol']} → {item['pod']}")
+                    if item.get("customer_name"):
+                        st.caption(f"👤 {item['customer_name']}")
+                    if item.get("etd"):
+                        st.caption(f"ETD: {item['etd'][:10]}")
+                    if item.get("eta"):
+                        st.caption(f"ETA: {item['eta'][:10]}")
+                    if st.button("详情", key=f"kanban_view_{item['booking_id']}"):
+                        st.session_state[f"kanban_booking"] = item["booking_id"]
+
+    # 详情
+    if st.session_state.get("kanban_booking"):
+        bid = st.session_state["kanban_booking"]
+        st.divider()
+        st.subheader(f"📍 Booking 详情 & 跟踪节点")
+        try:
+            booking = api_get(f"/bookings/{bid}")
+            status = api_get(f"/tracking/bookings/{bid}/status")
+            events = api_get(f"/tracking/bookings/{bid}/events")
+        except Exception as e:
+            st.error(str(e))
+            events = []
+
+        c1, c2, c3 = st.columns([2, 2, 1])
+        with c1:
+            st.markdown(f"**{booking['booking_no']}**")
+            st.caption(f"{booking['carrier']} · {booking['container_count']}x{booking['container_type']}")
+            st.write(f"📍 {booking['pol']} → {booking['pod']}")
+        with c2:
+            st.write(f"客户: {booking.get('customer_name') or '-'}")
+            st.write(f"状态: **{status['current_status']}**")
+        with c3:
+            if st.button("关闭"):
+                st.session_state["kanban_booking"] = None
+                st.rerun()
+
+        st.markdown("**📜 跟踪节点时间线**")
+        for ev in events:
+            with st.container(border=True):
+                cs = st.columns([1, 3, 1])
+                with cs[0]:
+                    st.write(f"🏷️ **{ev['status']}**")
+                    st.caption(ev["occurred_at"][:19])
+                with cs[1]:
+                    if ev.get("location"):
+                        st.write(f"📍 {ev['location']}")
+                    if ev.get("vessel_name"):
+                        st.write(f"🚢 {ev['vessel_name']} / {ev.get('voyage_no', '')}")
+                    if ev.get("container_no"):
+                        st.write(f"📦 {ev['container_no']}")
+                    if ev.get("remark"):
+                        st.caption(f"💬 {ev['remark']}")
+                with cs[2]:
+                    st.caption(f"via {ev['source']}")
+
+        st.markdown("**➕ 添加新节点**")
+        with st.form("add_event"):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                ev_status = st.selectbox(
+                    "状态",
+                    [
+                        "booked",
+                        "empty_picked_up",
+                        "loaded",
+                        "departed",
+                        "in_transit",
+                        "arrived",
+                        "delivered",
+                        "completed",
+                        "exception",
+                    ],
+                )
+                ev_location = st.text_input("地点")
+            with c2:
+                ev_vessel = st.text_input("船名")
+                ev_voyage = st.text_input("航次")
+                ev_container = st.text_input("柜号")
+            with c3:
+                ev_occurred = st.text_input("时间 (ISO)", value=datetime.now().isoformat(timespec="seconds"))
+            ev_remark = st.text_area("备注")
+            if st.form_submit_button("添加", type="primary"):
+                try:
+                    api_post(
+                        f"/tracking/bookings/{bid}/events",
+                        json={
+                            "status": ev_status,
+                            "occurred_at": ev_occurred,
+                            "location": ev_location or None,
+                            "vessel_name": ev_vessel or None,
+                            "voyage_no": ev_voyage or None,
+                            "container_no": ev_container or None,
+                            "remark": ev_remark or None,
+                        },
+                    )
+                    st.success("已添加")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+
+
+# ============== 页面：账单中心 ==============
+
+elif page == "💰 账单中心":
+    st.header("💰 账单中心")
+
+    with st.expander("📤 上传账单（PDF / 图片）", expanded=False):
+        try:
+            bookings = api_get("/bookings/", page=1, page_size=100)["items"]
+            booking_map = {f"{b['booking_no']} ({b['carrier']})": b["id"] for b in bookings}
+        except Exception:
+            booking_map = {}
+
+        bill_files = st.file_uploader(
+            "选择账单文件",
+            type=["pdf", "png", "jpg", "jpeg", "tiff", "bmp"],
+            accept_multiple_files=True,
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            bill_type = st.selectbox("账单类型", ["receivable", "payable"])
+        with c2:
+            booking_label = st.selectbox("关联订舱 (可选)", ["（不关联）"] + list(booking_map.keys()))
+
+        if st.button("上传并开始 OCR", type="primary") and bill_files:
+            for f in bill_files:
+                try:
+                    booking_id = booking_map.get(booking_label) if booking_label != "（不关联）" else None
+                    res = api_post(
+                        "/bills/upload",
+                        files={"file": (f.name, f.getvalue(), f.type)},
+                        data={"bill_type": bill_type, "booking_id": booking_id or ""},
+                    )
+                    st.success(f"✅ {f.name} 已上传, OCR 后台运行中...")
+                except Exception as e:
+                    st.error(f"❌ {f.name}: {e}")
+            st.rerun()
+
+    st.divider()
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        bill_type_filter = st.selectbox("类型", ["全部", "receivable", "payable"])
+    with c2:
+        bill_status = st.selectbox(
+            "状态",
+            ["全部", "uploaded", "ocr_processing", "ocr_done", "ocr_failed", "confirmed", "disputed", "paid"],
+        )
+    with c3:
+        bill_search = st.text_input("搜索账单号")
+
+    params: dict[str, Any] = {"page": 1, "page_size": 30}
+    if bill_type_filter != "全部":
+        params["bill_type"] = bill_type_filter
+    if bill_status != "全部":
+        params["status"] = bill_status
+
+    try:
+        data = api_get("/bills/", **params)
+    except Exception as e:
+        st.error(f"加载失败: {e}")
+        st.stop()
+
+    items = data["items"]
+    st.caption(f"共 {data['total']} 条")
+    if bill_search:
+        items = [b for b in items if bill_search.lower() in (b.get("bill_no") or "").lower()]
+
+    if not items:
+        st.info("暂无数据")
+    else:
+        for bill in items:
+            with st.container(border=True):
+                cols = st.columns([3, 2, 2, 1])
+                with cols[0]:
+                    st.markdown(f"**{bill['bill_no']}** ({bill['bill_kind']})")
+                    st.caption(bill.get("file_name") or "无文件")
+                with cols[1]:
+                    st.write(f"💰 {bill['total_amount']} {bill['currency']}")
+                    if bill.get("issued_at"):
+                        st.caption(f"📅 {bill['issued_at'][:10]}")
+                with cols[2]:
+                    badge = {
+                        "uploaded": "⏳ 待 OCR",
+                        "ocr_processing": "🔄 OCR 中",
+                        "ocr_done": "✅ OCR 完成",
+                        "ocr_failed": "❌ OCR 失败",
+                        "confirmed": "🎯 已确认",
+                        "disputed": "⚠️ 争议",
+                        "paid": "💚 已结清",
+                    }.get(bill["status"], bill["status"])
+                    st.write(badge)
+                with cols[3]:
+                    if st.button("详情", key=f"view_bill_{bill['id']}"):
+                        st.session_state[f"show_bill_{bill['id']}"] = True
+
+                if st.session_state.get(f"show_bill_{bill['id']}"):
+                    try:
+                        detail = api_get(f"/bills/{bill['id']}")
+                    except Exception as e:
+                        st.error(str(e))
+                        detail = None
+                    if detail:
+                        with st.form(f"edit_bill_{bill['id']}"):
+                            st.subheader("修正字段")
+                            c1, c2, c3 = st.columns(3)
+                            with c1:
+                                bill_no = st.text_input("账单号 *", detail.get("bill_no") or "")
+                                seller = st.text_input("销售方", detail.get("seller_name") or "")
+                                seller_tax = st.text_input("销售方税号", detail.get("seller_tax_no") or "")
+                            with c2:
+                                buyer = st.text_input("购买方", detail.get("buyer_name") or "")
+                                buyer_tax = st.text_input("购买方税号", detail.get("buyer_tax_no") or "")
+                                currency = st.text_input("币种", detail.get("currency") or "CNY")
+                            with c3:
+                                total = st.number_input(
+                                    "价税合计",
+                                    0.0,
+                                    step=100.0,
+                                    value=float(detail.get("total_amount") or 0),
+                                )
+                                tax = st.number_input(
+                                    "税额",
+                                    0.0,
+                                    step=10.0,
+                                    value=float(detail.get("tax_amount") or 0),
+                                )
+                                excl = st.number_input(
+                                    "不含税",
+                                    0.0,
+                                    step=10.0,
+                                    value=float(detail.get("amount_excl_tax") or 0),
+                                )
+
+                            if detail.get("line_items"):
+                                with st.expander(f"明细行 ({len(detail['line_items'])} 条)"):
+                                    st.json(detail["line_items"])
+
+                            with st.expander("OCR 原文"):
+                                st.code(detail.get("ocr_text") or "(空)")
+
+                            remark = st.text_area("备注", detail.get("remark") or "")
+
+                            cols_btn = st.columns(4)
+                            with cols_btn[0]:
+                                if st.form_submit_button("💾 保存", type="primary"):
+                                    try:
+                                        api_patch(
+                                            f"/bills/{bill['id']}",
+                                            {
+                                                "bill_no": bill_no or detail.get("bill_no") or "PENDING",
+                                                "seller_name": seller or None,
+                                                "seller_tax_no": seller_tax or None,
+                                                "buyer_name": buyer or None,
+                                                "buyer_tax_no": buyer_tax or None,
+                                                "currency": currency or "CNY",
+                                                "total_amount": total or None,
+                                                "tax_amount": tax or None,
+                                                "amount_excl_tax": excl or None,
+                                                "remark": remark or None,
+                                            },
+                                        )
+                                        st.success("已保存")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(str(e))
+                            with cols_btn[1]:
+                                if st.form_submit_button("🔁 重新 OCR"):
+                                    try:
+                                        api_post(f"/bills/{bill['id']}/reocr")
+                                        st.success("已加入重排")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(str(e))
+                            with cols_btn[2]:
+                                if st.form_submit_button("🎯 确认入账"):
+                                    try:
+                                        api_post(f"/bills/{bill['id']}/confirm")
+                                        st.success("已确认")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(str(e))
+                            with cols_btn[3]:
+                                if st.form_submit_button("🗑️ 删除"):
+                                    try:
+                                        api_delete(f"/bills/{bill['id']}")
+                                        st.success("已删除")
+                                        st.session_state[f"show_bill_{bill['id']}"] = False
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(str(e))
 
 
 # ============== 页面：系统设置 ==============

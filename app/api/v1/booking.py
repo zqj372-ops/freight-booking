@@ -17,6 +17,8 @@ from app.schemas.booking import (
 )
 from app.services.booking_service import can_transition, next_booking_no
 from app.services.email_service import render_and_send
+from app.services.tracking_service import add_event, ensure_booked
+from app.models.tracking import TrackingStatus, TrackingSource
 
 router = APIRouter()
 
@@ -57,6 +59,9 @@ async def create_booking(
     b = Booking(**payload.model_dump(exclude={"booking_no"}))
     b.booking_no = payload.booking_no or await next_booking_no(db, payload.carrier)
     db.add(b)
+    await db.flush()
+    # 自动创建 BOOKED 跟踪节点
+    await ensure_booked(db, b.id)
     await db.commit()
     await db.refresh(b)
     return BookingRead.model_validate(b)
@@ -88,6 +93,27 @@ async def update_booking(
         )
     for k, v in data.items():
         setattr(b, k, v)
+    # 状态推进时, 自动记一笔跟踪节点 (便于看板有数据)
+    if new_status:
+        tracking_map = {
+            BookingStatus.SUBMITTED: TrackingStatus.BOOKED,  # 已在 BOOKED
+            BookingStatus.CONFIRMED: None,  # 暂不产生新节点
+            BookingStatus.COMPLETED: TrackingStatus.COMPLETED,
+            BookingStatus.CANCELLED: TrackingStatus.EXCEPTION,
+        }
+        target_tracking = tracking_map.get(new_status)
+        if target_tracking:
+            try:
+                await add_event(
+                    db,
+                    booking_id=b.id,
+                    status=target_tracking,
+                    source=TrackingSource.AUTO,
+                    remark=f"booking status -> {new_status.value}",
+                )
+            except ValueError:
+                # 已存在, 跳过
+                pass
     await db.commit()
     await db.refresh(b)
     return BookingRead.model_validate(b)

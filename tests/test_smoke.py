@@ -123,3 +123,197 @@ async def test_create_booking_and_state_machine() -> None:
             json={"status": "draft"},
         )
         assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_booking_auto_creates_booked_event() -> None:
+    """建订舱应该自动产生 BOOKED 跟踪节点"""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.post(
+            "/api/v1/bookings/",
+            json={"carrier": "MSC", "pol": "CNNGB", "pod": "DEHAM", "container_type": "20GP", "container_count": 2},
+        )
+        assert r.status_code == 201
+        bid = r.json()["id"]
+
+        # 查 status
+        r = await c.get(f"/api/v1/tracking/bookings/{bid}/status")
+        assert r.status_code == 200
+        assert r.json()["current_status"] == "booked"
+
+        # 查 events
+        r = await c.get(f"/api/v1/tracking/bookings/{bid}/events")
+        assert r.status_code == 200
+        events = r.json()
+        assert len(events) >= 1
+        assert events[0]["status"] == "booked"
+
+
+@pytest.mark.asyncio
+async def test_tracking_state_machine() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        # 建订舱
+        r = await c.post(
+            "/api/v1/bookings/",
+            json={"carrier": "COSCO", "pol": "CNSHA", "pod": "USNYC"},
+        )
+        bid = r.json()["id"]
+
+        # 推进 booked -> empty_picked_up
+        r = await c.post(
+            f"/api/v1/tracking/bookings/{bid}/events",
+            json={"status": "empty_picked_up", "occurred_at": "2026-08-20T10:00:00", "location": "CNSHA 堆场"},
+        )
+        assert r.status_code == 201
+
+        # 推进 empty_picked_up -> loaded
+        r = await c.post(
+            f"/api/v1/tracking/bookings/{bid}/events",
+            json={"status": "loaded", "occurred_at": "2026-08-20T18:00:00", "vessel_name": "COSCO SHIPPING UNIVERSE"},
+        )
+        assert r.status_code == 201
+
+        # 非法跳: loaded -> delivered (中间要经过 departed/in_transit/arrived)
+        r = await c.post(
+            f"/api/v1/tracking/bookings/{bid}/events",
+            json={"status": "delivered", "occurred_at": "2026-09-01T10:00:00"},
+        )
+        assert r.status_code == 400  # 状态机拒绝
+
+        # 正常推进到 completed (时间递增避免排序歧义)
+        from datetime import datetime, timedelta
+
+        base = datetime(2026, 8, 21, 10, 0, 0)
+        for i, (status_, location) in enumerate(
+            [
+                ("departed", "CNSHA"),
+                ("in_transit", None),
+                ("arrived", "USNYC"),
+                ("delivered", "USNYC 仓库"),
+                ("completed", None),
+            ]
+        ):
+            r = await c.post(
+                f"/api/v1/tracking/bookings/{bid}/events",
+                json={
+                    "status": status_,
+                    "occurred_at": (base + timedelta(hours=i)).isoformat(),
+                    "location": location,
+                },
+            )
+            assert r.status_code == 201, f"{status_} failed: {r.text}"
+
+        # 最终状态
+        r = await c.get(f"/api/v1/tracking/bookings/{bid}/status")
+        assert r.json()["current_status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_kanban_view() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        # 建几个 booking
+        for i, carrier in enumerate(["MAERSK", "MSC", "COSCO"]):
+            r = await c.post(
+                "/api/v1/bookings/",
+                json={"carrier": carrier, "pol": "CNSHA", "pod": f"US{i:02d}"},
+            )
+            assert r.status_code == 201
+
+        r = await c.get("/api/v1/tracking/kanban")
+        assert r.status_code == 200
+        data = r.json()
+        assert "columns" in data
+        assert len(data["columns"]) == 9  # 9 个状态
+        # 至少 booked 列有数据
+        booked_col = next(c for c in data["columns"] if c["status"] == "booked")
+        assert booked_col["count"] >= 3
+
+
+def test_bill_parser_vat_invoice() -> None:
+    """增值税发票 OCR 文本解析"""
+    from app.services.bill_parser import parse_bill_text
+
+    text = """
+    增值税专用发票
+    发票代码: 011001900111
+    发票号码: 12345678
+    开票日期: 2026-08-19
+
+    销售方 名称: 上海中远海运物流有限公司
+    纳税人识别号: 91310101MA1FXXXXXX
+    购买方 名称: 深圳市海星供应链有限公司
+    纳税人识别号: 91440300MA5DXXXXXX
+
+    货物名称 数量 单价 金额 税率 税额
+    海运费 1 5000.00 5000.00 6% 300.00
+    操作费 1 500.00 500.00 6% 30.00
+
+    价税合计(大写) 伍仟捌佰叁拾圆整 （小写）¥5830.00
+    税额 ¥330.00
+    不含税金额 ¥5500.00
+    """
+    fields = parse_bill_text(text)
+    assert fields["bill_no"] == "12345678"
+    assert "中远海运" in (fields.get("seller_name") or "")
+    assert "海星" in (fields.get("buyer_name") or "")
+    assert fields["total_amount"] == 5830.00
+    assert fields["tax_amount"] == 330.00
+    assert fields["amount_excl_tax"] == 5500.00
+    assert fields["currency"] == "CNY"
+    assert fields["bill_kind"] == "vat_special"
+    assert len(fields.get("line_items", [])) == 2
+
+
+def test_bill_parser_ocean_freight() -> None:
+    """海运费发票解析"""
+    from app.services.bill_parser import parse_bill_text
+
+    text = """
+    OCEAN FREIGHT INVOICE
+    Invoice No: MAE-INV-2026-001
+    Date: 2026/08/19
+
+    From: MAERSK LINE
+    To: SHENZHEN LOGISTICS CO LTD
+
+    Amount: USD 1500.00
+    """
+    fields = parse_bill_text(text)
+    assert fields["bill_no"] == "MAE-INV-2026-001"
+    assert fields["currency"] == "USD"
+    assert fields["bill_kind"] == "ocean_freight"
+
+
+@pytest.mark.asyncio
+async def test_bill_crud() -> None:
+    """账单 CRUD + OCR 状态"""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        # 手动建
+        r = await c.post(
+            "/api/v1/bills/",
+            json={
+                "bill_no": "INV-2026-TEST-001",
+                "bill_type": "receivable",
+                "currency": "CNY",
+                "total_amount": 1000.0,
+                "tax_amount": 60.0,
+                "amount_excl_tax": 940.0,
+                "seller_name": "测试销售方",
+                "buyer_name": "测试购买方",
+            },
+        )
+        assert r.status_code == 201
+        bid = r.json()["id"]
+        assert r.json()["status"] == "uploaded"
+
+        # 列表
+        r = await c.get("/api/v1/bills/")
+        assert r.status_code == 200
+        assert any(b["id"] == bid for b in r.json()["items"])
+
+        # 修正 + 确认
+        r = await c.patch(f"/api/v1/bills/{bid}", json={"remark": "客户已确认"})
+        assert r.status_code == 200
+        r = await c.post(f"/api/v1/bills/{bid}/confirm")
+        assert r.status_code == 200
+        assert r.json()["status"] == "confirmed"

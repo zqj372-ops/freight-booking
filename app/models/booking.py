@@ -14,6 +14,7 @@ from app.models._mixins import TimestampMixin
 if TYPE_CHECKING:
     from app.models.so import SO
     from app.models.agent import Agent
+    from app.models.tracking import TrackingEvent
 
 
 class BookingStatus(str, enum.Enum):
@@ -75,6 +76,9 @@ class Booking(Base, TimestampMixin):
 
     # 关联
     so: Mapped["SO | None"] = relationship(back_populates="booking", lazy="selectin")
+    tracking_events: Mapped[list["TrackingEvent"]] = relationship(
+        back_populates="booking", lazy="selectin", order_by="TrackingEvent.occurred_at"
+    )
 
     def __repr__(self) -> str:
         return f"<Booking {self.booking_no} {self.carrier} {self.pol}->{self.pod} {self.status}>"
