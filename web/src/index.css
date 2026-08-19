@@ -53,7 +53,29 @@
   * {
     @apply border-border;
   }
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
   body {
     @apply bg-background text-foreground;
+    font-family:
+      -apple-system,
+      BlinkMacSystemFont,
+      "SF Pro Text",
+      "Segoe UI",
+      "PingFang SC",
+      "Hiragino Sans GB",
+      "Microsoft YaHei UI",
+      "Microsoft YaHei",
+      "Source Han Sans CN",
+      "Noto Sans CJK SC",
+      "WenQuanYi Micro Hei",
+      "Helvetica Neue",
+      Helvetica,
+      Arial,
+      sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
   }
 }
