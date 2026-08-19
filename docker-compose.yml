@@ -1,36 +1,54 @@
 version: "3.9"
 
+# 通用配置: 环境变量、volumes
+
 services:
+  # ===== API: Python FastAPI + PaddleOCR + APScheduler =====
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.api
     container_name: freight-api
     restart: unless-stopped
     env_file: .env
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     volumes:
       - ./uploads:/app/uploads
       - ./data:/app/data
       - ./logs:/app/logs
+      - ./samples:/app/samples
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 5s
       retries: 3
+    networks:
+      - freight-net
 
-  ui:
-    build: .
-    container_name: freight-ui
+  # ===== Web: React + Vite build + nginx =====
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        # 反代走 docker network, 用 service name
+        VITE_API_BASE: /api/v1
+    container_name: freight-web
     restart: unless-stopped
     depends_on:
       - api
-    environment:
-      API_BASE: http://api:8000
     ports:
-      - "8501:8501"
-    command: ["streamlit", "run", "frontend/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+      - "8080:80"
+    networks:
+      - freight-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
-  # 可选: PostgreSQL (生产用, 切换 DATABASE_URL 即可)
+  # ===== 可选: PostgreSQL (生产用, 切换 DATABASE_URL 即可) =====
   # postgres:
   #   image: postgres:16-alpine
   #   container_name: freight-db
@@ -41,8 +59,14 @@ services:
   #     POSTGRES_DB: freight
   #   volumes:
   #     - freight_pgdata:/var/lib/postgresql/data
-  #   ports:
-  #     - "5432:5432"
+  #   expose:
+  #     - "5432"
+  #   networks:
+  #     - freight-net
+
+networks:
+  freight-net:
+    driver: bridge
 
 # volumes:
 #   freight_pgdata:

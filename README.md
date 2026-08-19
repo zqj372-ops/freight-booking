@@ -2,37 +2,41 @@
 
 货代订舱自动化系统 — SO 识别 / 邮件订舱 / 账单 OCR / 运单跟踪 / 订舱代理管理。
 
-**当前状态**：v0.2 — SO + OCR + 邮件订舱 + 账单 OCR + 运单跟踪 Kanban + 代理管理 全部可跑通。
+**当前状态**：v0.3 — SO + OCR + 邮件订舱 + 账单 OCR + 运单跟踪 Kanban + IMAP 自动拉取 + React 前端 全部可跑通 + Docker 一键起。
 
 ## ✨ 功能矩阵
 
-| 模块 | v0.1 | v0.2 | 状态 |
-|---|---|---|---|
-| 📥 **SO 收件箱** (PaddleOCR) | ✅ | ✅ | 已稳定 |
-| ✏️ SO 字段修正 | ✅ | ✅ | 已稳定 |
-| 🎯 SO → Booking 一键生成 | ✅ | ✅ | 已稳定 |
-| 📧 **邮件订舱** (SMTP + Jinja2) | ✅ | ✅ | 已稳定 |
-| 👥 订舱代理管理 | ✅ | ✅ | 已稳定 |
-| 💰 **账单 OCR** (PaddleOCR + 规则) | - | ✅ | 已稳定 |
-| 💰 应收/应付对账 | - | ✅ | 已稳定 |
-| 🗺️ **运单跟踪 Kanban** | - | ✅ | 已稳定 |
-| 🗺️ 跟踪状态机 (9 节点) | - | ✅ | 已稳定 |
-| 🔁 自动状态节点 (创建即 BOOKED) | - | ✅ | 已稳定 |
-| 📜 邮件发送历史 | ✅ | ✅ | 已稳定 |
-| 🐳 Docker Compose | ✅ | ✅ | 已稳定 |
+| 模块 | v0.1 | v0.2 | v0.3 | 状态 |
+|---|---|---|---|---|
+| 📥 **SO 收件箱** (PaddleOCR) | ✅ | ✅ | ✅ | 已稳定 |
+| ✏️ SO 字段修正 | ✅ | ✅ | ✅ | 已稳定 |
+| 🎯 SO → Booking 一键生成 | ✅ | ✅ | ✅ | 已稳定 |
+| 📧 **邮件订舱** (SMTP + Jinja2) | ✅ | ✅ | ✅ | 已稳定 |
+| 👥 订舱代理管理 | ✅ | ✅ | ✅ | 已稳定 |
+| 💰 **账单 OCR** (PaddleOCR + 规则) | - | ✅ | ✅ | 已稳定 |
+| 💰 应收/应付对账 | - | ✅ | ✅ | 已稳定 |
+| 🗺️ **运单跟踪 Kanban** | - | ✅ | ✅ | 已稳定 |
+| 🗺️ 跟踪状态机 (9 节点) | - | ✅ | ✅ | 已稳定 |
+| 🔁 自动状态节点 (创建即 BOOKED) | - | ✅ | ✅ | 已稳定 |
+| 📬 **IMAP 自动拉 SO** (mock 优先) | - | - | ✅ | 已稳定 |
+| 🖥️ **React + shadcn/ui 前端** (9 页) | - | - | ✅ | 已稳定 |
+| 🎯 **Kanban 拖拽** (dnd-kit) | - | - | ✅ | 已稳定 |
+| 📜 邮件发送历史 | ✅ | ✅ | ✅ | 已稳定 |
+| 🐳 **Docker Compose 一键起** (api + web) | ✅ | ✅ | ✅ | 已稳定 |
 
 ## 🛠 技术栈
 
 - **后端**: Python 3.12 + FastAPI + SQLAlchemy 2.0 (async) + Pydantic v2 + Alembic
 - **OCR**: PaddleOCR 3.x (中文 SOTA, Apache 2.0)
-- **邮件**: aiosmtplib + Jinja2 模板
+- **邮件**: aiosmtplib + Jinja2 模板 + APScheduler 定时
+- **IMAP**: imaplib (标准库) + .eml mock 模式
 - **DB**: SQLite (开发) / PostgreSQL (生产, Docker Compose 已注释)
-- **前端**: Streamlit 1.x (单文件, 快速验证 UI)
-- **部署**: Docker / Docker Compose
+- **前端**: React 18 + TypeScript 5 + Vite 5 + shadcn/ui + Tailwind + @tanstack + @dnd-kit
+- **部署**: Docker Compose (api + web 双容器, nginx 反代)
 
 ## 🚀 快速开始
 
-### 方式 A：本地开发
+### 方式 A：本地开发 (前后端分开跑)
 
 ```bash
 # 1. 克隆
@@ -43,40 +47,55 @@ cd freight-booking
 cp .env.example .env
 # 编辑 .env, 至少填 SMTP_HOST / SMTP_USERNAME / SMTP_PASSWORD
 
-# 3. 装依赖 (推荐用 venv)
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-# 可选: pip install -e ".[ocr,ui,dev]"
+# 3. 后端
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[ocr,dev]"
+uvicorn app.main:app --reload     # API: http://localhost:8000
 
-# 4. 跑后端 (端口 8000)
-uvicorn app.main:app --reload
-
-# 5. 另开终端, 跑前端 (端口 8501)
-streamlit run frontend/app.py
+# 4. 前端 (另开终端)
+cd web
+npm install
+npm run dev                       # Web: http://localhost:5173
 ```
 
 访问:
 - API 文档: <http://localhost:8000/docs>
-- 前端: <http://localhost:8501>
+- 前端: <http://localhost:5173>
 - 健康检查: <http://localhost:8000/health>
 
-### 方式 B：Docker
+### 方式 B：Docker Compose 一键起 (推荐生产/演示)
 
 ```bash
 # 1. 复制并编辑环境变量
 cp .env.example .env
-vi .env
+vi .env  # 至少 SMTP_* 必填
 
-# 2. 启动
+# 2. 启动 (构建 api + web 镜像 + 起容器)
 docker compose up -d --build
 
 # 查看日志
 docker compose logs -f api
+docker compose logs -f web
+
+# 停
+docker compose down
+
+# 重建 (改代码后)
+docker compose up -d --build
 ```
 
-- API: <http://localhost:8000/docs>
-- UI: <http://localhost:8501>
+**端口**:
+- Web (React UI): <http://localhost:8080> ← **对外唯一入口**
+- API: 容器内 8000（不直接对外，由 nginx 反代 `/api` + `/health`）
+
+**架构**:
+```
+浏览器 → :8080 (nginx) → /         → 静态 React 资源
+                            /api/*   → 反代 → freight-api:8000
+                            /health  → 反代 → freight-api:8000/health
+```
+
+容器内 `web` 用 service name `api` 访问后端 (Docker network 内部 DNS)，无需配置外部 URL。
 
 ## 📂 项目结构
 
