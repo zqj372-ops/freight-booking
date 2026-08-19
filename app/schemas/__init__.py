@@ -43,3 +43,8 @@ from app.schemas.tracking import (  # noqa: F401
     KanbanColumn,
     KanbanResponse,
 )
+from app.schemas.email_ingestion import (  # noqa: F401
+    EmailIngestionRead,
+    IngestionResultRead,
+    ProcessedEmailRead,
+)

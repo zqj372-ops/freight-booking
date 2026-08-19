@@ -47,6 +47,22 @@ class Settings(BaseSettings):
     # ===== Scheduled tasks =====
     email_poll_cron: str = ""
 
+    # ===== IMAP =====
+    imap_enabled: bool = False
+    imap_host: str = "imap.exmail.qq.com"
+    imap_port: int = 993
+    imap_username: str = ""
+    imap_password: str = ""
+    imap_use_ssl: bool = True
+    imap_mailbox: str = "INBOX"
+    imap_filter_from: str = ""  # 白名单发件人,逗号分隔,空=不过滤
+    imap_filter_subject_keywords: str = "SO,Booking,订舱,BL,提单"
+    # 关键词命中才拉,逗号分隔,大小写不敏感
+    imap_poll_interval_seconds: int = 300  # 5 分钟
+    imap_max_per_poll: int = 50  # 单次最多拉 N 封
+    imap_mock_mode: bool = True  # 没配凭据自动 true
+    imap_mock_dir: Path = Path("./samples/imap")
+
     # ===== Carrier templates =====
     carrier_templates_path: Path = Path("./app/data/carrier_templates.json")
 

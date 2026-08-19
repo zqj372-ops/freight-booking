@@ -7,6 +7,12 @@ from app.models.email_template import EmailTemplate  # noqa: F401
 from app.models.email_log import EmailLog, EmailStatus  # noqa: F401
 from app.models.bill import Bill, BillStatus, BillKind  # noqa: F401
 from app.models.tracking import TrackingEvent, TrackingStatus, TrackingSource  # noqa: F401
+from app.models.email_ingestion import (  # noqa: F401
+    EmailIngestion,
+    IngestionSource,
+    IngestionStatus,
+    ProcessedEmail,
+)
 
 __all__ = [
     "SO",
@@ -23,4 +29,8 @@ __all__ = [
     "TrackingEvent",
     "TrackingStatus",
     "TrackingSource",
+    "EmailIngestion",
+    "IngestionSource",
+    "IngestionStatus",
+    "ProcessedEmail",
 ]

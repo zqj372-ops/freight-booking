@@ -37,6 +37,8 @@ dependencies = [
     "loguru>=0.7",
     # Date/Time
     "python-dateutil>=2.9",
+    # IMAP 自动拉取
+    "apscheduler>=3.10",
 ]
 
 [project.optional-dependencies]

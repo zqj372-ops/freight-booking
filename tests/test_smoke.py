@@ -1,5 +1,7 @@
 """Smoke test - 不依赖 OCR, 跑通最小流程"""
 
+from pathlib import Path
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -317,3 +319,98 @@ async def test_bill_crud() -> None:
         r = await c.post(f"/api/v1/bills/{bid}/confirm")
         assert r.status_code == 200
         assert r.json()["status"] == "confirmed"
+
+
+def test_eml_parser() -> None:
+    """解析 .eml 文件"""
+    from app.services.imap_service import parse_eml_file
+
+    sample = Path(__file__).parent.parent / "samples" / "imap" / "001_maersk_so.eml"
+    if not sample.exists():
+        # 测试环境可能没生成, 跳过
+        return
+    parsed = parse_eml_file(sample)
+    assert "MAERSK" in parsed.subject
+    assert "maersk.com" in parsed.from_addr
+    assert len(parsed.attachments) == 1
+    assert parsed.attachments[0].filename.endswith(".pdf")
+    assert parsed.attachments[0].content.startswith(b"%PDF-1.4")
+
+
+def test_filter_email() -> None:
+    from app.services.imap_service import ParsedEmail, filter_email
+    from datetime import datetime, timezone
+
+    pe = ParsedEmail(
+        message_id="<test@x.com>",
+        from_addr="booking@maersk.com",
+        subject="MAERSK SO Confirmation",
+        received_at=datetime.now(timezone.utc),
+        body_text="",
+        attachments=[],
+    )
+    # 没过滤: 通过
+    assert filter_email(pe, [], [])
+    # 白名单匹配
+    assert filter_email(pe, ["maersk"], [])
+    # 关键词匹配
+    assert filter_email(pe, [], ["SO"])
+    # 不匹配
+    assert not filter_email(pe, ["msc"], [])
+    assert not filter_email(pe, [], ["订舱"])
+
+
+@pytest.mark.asyncio
+async def test_imap_ingest_now_mock(tmp_path) -> None:
+    """手动触发 mock 拉取"""
+    from app.config import settings as s
+    from app.services.imap_service import run_ingestion
+    from app.models.so import SO
+    from sqlalchemy import select
+
+    # 用 samples/imap 当 mock_dir
+    mock_dir = Path(__file__).parent.parent / "samples" / "imap"
+    assert mock_dir.exists()
+    s.imap_mock_dir = mock_dir
+    s.imap_mock_mode = True
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        # 手动拉
+        r = await c.post("/api/v1/imap/ingest-now?source=mock")
+        assert r.status_code == 200, r.text
+        data = r.json()
+        # 3 个匹配关键词的 (newsletter 被过滤) + 1 个无附件的 (.eml 都有附件)
+        # 实际: 001/002/004 含 SO/Booking/订舱 关键词 → 入库
+        #       003 Newsletter → 跳过
+        assert data["total_fetched"] >= 3
+        assert data["new_count"] >= 3
+        assert data["error_count"] == 0
+        # 至少 3 个新 SO 入库
+        assert len(data["so_ids"]) >= 3
+
+        # 查 SO
+        r = await c.get("/api/v1/so/", params={"page": 1, "page_size": 50})
+        so_list = r.json()["items"]
+        # 至少能找到 source=email 的
+        from app.database import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as db:
+            stmt = select(SO).where(SO.source == "email")
+            email_sos = (await db.execute(stmt)).scalars().all()
+            assert len(email_sos) >= 3
+
+        # 重复拉应该被去重
+        r = await c.post("/api/v1/imap/ingest-now?source=mock")
+        data2 = r.json()
+        assert data2["new_count"] == 0  # 都已处理过
+        assert data2["skip_count"] >= 3
+
+        # 查历史
+        r = await c.get("/api/v1/imap/ingestions")
+        assert r.status_code == 200
+        assert len(r.json()) >= 2
+
+        # 查已处理邮件
+        r = await c.get("/api/v1/imap/processed")
+        assert r.status_code == 200
+        assert len(r.json()) >= 3

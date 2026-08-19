@@ -30,7 +30,16 @@ async def lifespan(app: FastAPI):
     if settings.app_env == "development":
         await init_db()
         await seed_default_templates()
+
+    # 启动后台调度器 (IMAP 自动拉取)
+    from app.services.scheduler import start_scheduler, stop_scheduler
+
+    await start_scheduler()
+
     yield
+
+    # 关闭调度器
+    await stop_scheduler()
     logger.info("=== {} 关闭 ===", settings.app_name)
 
 
