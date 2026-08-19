@@ -1,17 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
-import { Inbox, Package, Receipt, Mail, RefreshCw } from "lucide-react";
+import { Inbox, Package, Receipt, Mail, RefreshCw, TrendingUp, AlertCircle, Wallet } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatMoney } from "@/lib/utils";
 
 export function Dashboard() {
   const { data: soData } = useQuery({ queryKey: ["so-list"], queryFn: () => apiClient.listSO({ page: 1, page_size: 5 }) });
   const { data: bookingsData } = useQuery({ queryKey: ["bookings-list"], queryFn: () => apiClient.listBookings({ page: 1, page_size: 5 }) });
   const { data: billsData } = useQuery({ queryKey: ["bills-list"], queryFn: () => apiClient.listBills({ page: 1, page_size: 5 }) });
   const { data: kanban } = useQuery({ queryKey: ["kanban"], queryFn: () => apiClient.getKanban() });
+  const { data: finance } = useQuery({ queryKey: ["finance-dashboard"], queryFn: () => apiClient.financeDashboard() });
   const { data: ingestions, refetch: refetchIngestions } = useQuery({
     queryKey: ["ingestions"],
     queryFn: () => apiClient.listIngestions(),
@@ -59,7 +60,7 @@ export function Dashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">工作台</h1>
-          <p className="text-sm text-slate-500 mt-1">今日待办 + 关键指标</p>
+          <p className="text-sm text-slate-500 mt-1">今日待办 + 关键指标 + 财务概览</p>
         </div>
         <Button
           variant="outline"
@@ -88,6 +89,56 @@ export function Dashboard() {
           </Link>
         ))}
       </div>
+
+      {/* 财务 KPI (闭环关键) */}
+      {finance && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Wallet className="h-4 w-4" /> 财务概览
+            </CardTitle>
+            <CardDescription>应收/已收/未收 + 逾期 + 按船公司余额</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <div className="text-xs text-slate-500">应收总额</div>
+                <div className="text-lg font-semibold text-slate-900">{formatMoney(finance.receivable_total, "CNY")}</div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-500">已收</div>
+                <div className="text-lg font-semibold text-emerald-600 flex items-center gap-1">
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  {formatMoney(finance.receivable_paid, "CNY")}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-500">未收</div>
+                <div className="text-lg font-semibold text-amber-600">{formatMoney(finance.receivable_pending, "CNY")}</div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-500">逾期账单</div>
+                <div className={`text-lg font-semibold flex items-center gap-1 ${finance.overdue_count > 0 ? "text-rose-600" : "text-slate-400"}`}>
+                  {finance.overdue_count > 0 && <AlertCircle className="h-3.5 w-3.5" />}
+                  {finance.overdue_count} 笔
+                </div>
+              </div>
+            </div>
+            {Object.keys(finance.by_carrier || {}).length > 0 && (
+              <div className="mt-3 pt-3 border-t">
+                <div className="text-xs text-slate-500 mb-1.5">按船公司未收余额 (Top 5)</div>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(finance.by_carrier).map(([c, amt]) => (
+                    <Badge key={c} variant="secondary" className="text-xs">
+                      {c}: {formatMoney(amt, "CNY")}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
@@ -133,7 +184,7 @@ export function Dashboard() {
                       {b.total_amount} {b.currency} · {formatDate(b.issued_at)}
                     </div>
                   </div>
-                  <Badge variant={b.status === "confirmed" ? "success" : b.status === "ocr_done" ? "info" : "secondary"}>
+                  <Badge variant={b.status === "paid" ? "success" : b.status === "confirmed" ? "info" : "secondary"}>
                     {b.status}
                   </Badge>
                 </div>

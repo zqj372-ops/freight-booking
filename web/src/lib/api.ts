@@ -294,6 +294,25 @@ export const apiClient = {
     ).then((r) => r.data),
   listIngestions: () => api.get<IngestionRecord[]>("/imap/ingestions").then((r) => r.data),
 
+  // Finance
+  payBill: (id: string, data: { payment_method: string; payment_ref?: string }) =>
+    api.post<{ id: string; status: string; paid_at: string | null }>(`/finance/bills/${id}/pay`, data).then((r) => r.data),
+  reconcile: () =>
+    api.post<{ matched: number; results: Array<{ bill_id: string; booking_id: string; score: number; reasons: string[] }> }>(
+      "/finance/reconcile",
+    ).then((r) => r.data),
+  financeDashboard: () =>
+    api.get<{
+      receivable_total: number;
+      receivable_paid: number;
+      receivable_pending: number;
+      payable_total: number;
+      payable_paid: number;
+      payable_pending: number;
+      overdue_count: number;
+      by_carrier: Record<string, number>;
+    }>("/finance/dashboard").then((r) => r.data),
+
   // Health
   health: () => fetch("/health").then((r) => r.json()) as Promise<{ status: string; version: string }>,
 };

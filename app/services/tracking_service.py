@@ -80,6 +80,19 @@ async def add_event(
     await db.commit()
     await db.refresh(event)
     logger.info("跟踪节点添加: booking={} status={}", booking_id, status.value)
+
+    # 钩子: 运单 completed → 自动生成应收账单 (闭环关键步骤)
+    if status == TrackingStatus.COMPLETED:
+        try:
+            from app.services.auto_bill_service import generate_bill_on_booking_completed
+
+            bill = await generate_bill_on_booking_completed(db, booking_id)
+            if bill:
+                logger.info("✅ 运单完成自动生成应收账单: bill_id={}", bill.id)
+        except Exception as e:
+            # 不阻塞跟踪事件保存, 但记日志
+            logger.exception("自动生成应收账单失败 (booking={}): {}", booking_id, e)
+
     return event
 
 

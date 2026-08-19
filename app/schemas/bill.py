@@ -50,6 +50,8 @@ class BillUpdate(BaseModel):
     issued_at: datetime | None = None
     due_at: datetime | None = None
     paid_at: datetime | None = None
+    payment_method: str | None = None
+    payment_ref: str | None = None
     remark: str | None = None
 
 
@@ -58,6 +60,11 @@ class BillRead(BillBase):
 
     id: str
     status: BillStatus
+    matched_booking_id: str | None
+    matched_at: datetime | None
+    match_score: float | None
+    payment_method: str | None
+    payment_ref: str | None
     file_path: str | None
     file_name: str | None
     file_mime: str | None
@@ -85,9 +92,13 @@ class BillListItem(BaseModel):
     seller_name: str | None
     buyer_name: str | None
     booking_id: str | None
+    matched_booking_id: str | None
+    match_score: float | None
+    payment_method: str | None
     file_name: str | None
     issued_at: datetime | None
     due_at: datetime | None
+    paid_at: datetime | None
     created_at: datetime
 
 
@@ -96,3 +107,28 @@ class BillListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class PayBillRequest(BaseModel):
+    """回款登记"""
+
+    payment_method: str = Field(..., description="bank_transfer / alipay / wechat / cash / cheque")
+    payment_ref: str | None = None
+    paid_at: datetime | None = None
+
+
+class FinanceKPIResponse(BaseModel):
+    receivable_total: float
+    receivable_paid: float
+    receivable_pending: float
+    payable_total: float
+    payable_paid: float
+    payable_pending: float
+    overdue_count: int
+    by_carrier: dict[str, float]
+
+
+class ReconcileResult(BaseModel):
+    matched: int
+    skipped: int
+    results: list[dict[str, Any]] = Field(default_factory=list)

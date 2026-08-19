@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import so, booking, agent, email, bill, tracking, imap
+from app.api.v1 import so, booking, agent, email, bill, tracking, imap, finance
 
 api_router = APIRouter()
 api_router.include_router(so.router, prefix="/so", tags=["SO 收件箱"])
@@ -12,3 +12,4 @@ api_router.include_router(email.router, prefix="/emails", tags=["邮件"])
 api_router.include_router(bill.router, prefix="/bills", tags=["账单"])
 api_router.include_router(tracking.router, prefix="/tracking", tags=["运单跟踪"])
 api_router.include_router(imap.router, prefix="/imap", tags=["IMAP 自动拉取"])
+api_router.include_router(finance.router, prefix="/finance", tags=["财务"])

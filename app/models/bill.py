@@ -50,11 +50,11 @@ class Bill(Base, TimestampMixin):
     bill_type: Mapped[str] = mapped_column(String(16), default="receivable")
     # receivable / payable
 
-    # 关联运单 (一对多)
+    # 关联运单 (一对多) - 来源
     booking_id: Mapped[str | None] = mapped_column(
         ForeignKey("bookings.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    booking = relationship("Booking", lazy="joined")
+    booking = relationship("Booking", foreign_keys=[booking_id], lazy="joined")
 
     # 购销方 (OCR 抽取)
     seller_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -90,6 +90,22 @@ class Bill(Base, TimestampMixin):
     issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # 对账
+    matched_booking_id: Mapped[str | None] = mapped_column(
+        ForeignKey("bookings.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    matched_booking = relationship("Booking", foreign_keys=[matched_booking_id], lazy="joined")
+    matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    match_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # 0-1, 匹配度 (金额 + 时间 + 票号综合)
+
+    # 回款
+    payment_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # bank_transfer / alipay / wechat / cash / cheque
+    payment_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # 银行流水号 / 微信交易号
+
     remark: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     def __repr__(self) -> str:

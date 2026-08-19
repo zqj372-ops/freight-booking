@@ -414,3 +414,145 @@ async def test_imap_ingest_now_mock(tmp_path) -> None:
         r = await c.get("/api/v1/imap/processed")
         assert r.status_code == 200
         assert len(r.json()) >= 3
+
+
+@pytest.mark.asyncio
+async def test_auto_bill_on_tracking_completed() -> None:
+    """运单 completed → 自动生成应收账单 (闭环关键)"""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        # 建订舱
+        r = await c.post(
+            "/api/v1/bookings/",
+            json={"carrier": "MAERSK", "pol": "CNSHA", "pod": "USLAX", "container_type": "40HQ", "container_count": 2},
+        )
+        assert r.status_code == 201
+        bid = r.json()["id"]
+
+        # 推进到 completed
+        from datetime import datetime, timedelta
+        base = datetime(2026, 8, 22, 10, 0, 0)
+        for i, (status_, location) in enumerate([
+            ("empty_picked_up", "CNSHA 堆场"),
+            ("loaded", "CNSHA 码头"),
+            ("departed", "CNSHA"),
+            ("in_transit", None),
+            ("arrived", "USLAX"),
+            ("delivered", "USLAX 仓库"),
+        ]):
+            r = await c.post(
+                f"/api/v1/tracking/bookings/{bid}/events",
+                json={"status": status_, "occurred_at": (base + timedelta(hours=i)).isoformat(), "location": location},
+            )
+            assert r.status_code == 201, f"{status_} failed"
+
+        # 推 completed → 触发自动账单
+        r = await c.post(
+            f"/api/v1/tracking/bookings/{bid}/events",
+            json={"status": "completed", "occurred_at": (base + timedelta(hours=8)).isoformat()},
+        )
+        assert r.status_code == 201
+
+        # 验证应收账单生成
+        r = await c.get("/api/v1/bills/", params={"bill_type": "receivable"})
+        assert r.status_code == 200
+        bills = r.json()["items"]
+        # 找到刚生成的
+        bill = next((b for b in bills if b["booking_id"] == bid), None)
+        assert bill is not None, "运单完成应自动生成应收账单"
+        assert bill["bill_no"].startswith("AUTO-")
+        assert bill["status"] == "uploaded"  # 等财务填金额
+
+
+@pytest.mark.asyncio
+async def test_pay_bill_flow() -> None:
+    """回款登记流程"""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        # 手动建账单
+        r = await c.post(
+            "/api/v1/bills/",
+            json={
+                "bill_no": "PAY-TEST-001",
+                "bill_type": "receivable",
+                "currency": "CNY",
+                "total_amount": 5000.0,
+                "seller_name": "货代公司",
+                "buyer_name": "客户 A",
+            },
+        )
+        assert r.status_code == 201
+        bid = r.json()["id"]
+
+        # 回款登记
+        r = await c.post(
+            f"/api/v1/finance/bills/{bid}/pay",
+            json={"payment_method": "bank_transfer", "payment_ref": "TXN-20260820-001"},
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["status"] == "paid"
+        assert data["payment_method"] == "bank_transfer"
+        assert data["payment_ref"] == "TXN-20260820-001"
+        assert data["paid_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_finance_dashboard() -> None:
+    """财务 KPI"""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        # 自给自足: 建 2 笔账单, 一笔付一笔不付
+        r = await c.post(
+            "/api/v1/bills/",
+            json={"bill_no": "KPI-001", "bill_type": "receivable", "currency": "CNY", "total_amount": 10000.0, "seller_name": "公司", "buyer_name": "客户 A"},
+        )
+        b1 = r.json()["id"]
+        r = await c.post(
+            "/api/v1/bills/",
+            json={"bill_no": "KPI-002", "bill_type": "receivable", "currency": "CNY", "total_amount": 5000.0, "seller_name": "公司", "buyer_name": "客户 B"},
+        )
+        b2 = r.json()["id"]
+
+        # 付第一笔
+        await c.post(f"/api/v1/finance/bills/{b1}/pay", json={"payment_method": "bank_transfer"})
+
+        r = await c.get("/api/v1/finance/dashboard")
+        assert r.status_code == 200
+        kpi = r.json()
+        assert kpi["receivable_total"] == 15000.0
+        assert kpi["receivable_paid"] == 10000.0
+        assert kpi["receivable_pending"] == 5000.0
+        assert kpi["overdue_count"] == 0  # 都没到期
+        assert "by_carrier" in kpi
+
+
+@pytest.mark.asyncio
+async def test_reconcile_endpoint() -> None:
+    """对账端点"""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        # 建 booking 和 bill (显式关联)
+        r = await c.post(
+            "/api/v1/bookings/",
+            json={"carrier": "MSC", "pol": "CNNGB", "pod": "DEHAM"},
+        )
+        bid = r.json()["id"]
+        r = await c.post(
+            "/api/v1/bills/",
+            json={
+                "bill_no": "RECON-TEST-001",
+                "bill_type": "receivable",
+                "booking_id": bid,
+                "currency": "CNY",
+                "total_amount": 3000.0,
+                "seller_name": "公司",
+                "buyer_name": "客户",
+            },
+        )
+        bill_id = r.json()["id"]
+
+        # 调对账
+        r = await c.post("/api/v1/finance/reconcile")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["matched"] >= 1
+        # 这个账单显式 booking_id 关联, 应该 match 成功
+        matched_ids = [r["bill_id"] for r in data["results"]]
+        assert bill_id in matched_ids

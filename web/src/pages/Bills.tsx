@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Upload, Check, RefreshCw, X, FileText } from "lucide-react";
+import { Upload, Check, RefreshCw, X, FileText, Wallet, Link2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,6 +62,28 @@ export function Bills() {
     },
   });
 
+  const payBill = useMutation({
+    mutationFn: ({ id, method, ref }: { id: string; method: string; ref?: string }) =>
+      apiClient.payBill(id, { payment_method: method, payment_ref: ref }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bills-list"] });
+      qc.invalidateQueries({ queryKey: ["finance-dashboard"] });
+      setPaying(null);
+    },
+  });
+
+  const reconcile = useMutation({
+    mutationFn: () => apiClient.reconcile(),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["bills-list"] });
+      alert(`✅ 对账完成: 匹配 ${data.matched} 笔`);
+    },
+  });
+
+  const [paying, setPaying] = useState<Bill | null>(null);
+  const [payMethod, setPayMethod] = useState("bank_transfer");
+  const [payRef, setPayRef] = useState("");
+
   const update = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Bill> }) => apiClient.updateBill(id, data),
     onSuccess: () => {
@@ -108,6 +130,9 @@ export function Bills() {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>账单列表 · 共 {data?.total ?? 0} 条</CardTitle>
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => reconcile.mutate()} disabled={reconcile.isPending}>
+              <Link2 className="h-4 w-4" /> 自动对账
+            </Button>
             <Select value={billType} onValueChange={setBillType}>
               <SelectTrigger className="w-32"><SelectValue placeholder="类型" /></SelectTrigger>
               <SelectContent>
@@ -170,26 +195,37 @@ export function Bills() {
                       <Badge variant={STATUS_VARIANT[b.status]}>{STATUS_LABEL[b.status]}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setEditing(b);
-                          setEditFields({
-                            bill_no: b.bill_no,
-                            seller_name: b.seller_name ?? "",
-                            seller_tax_no: b.seller_tax_no ?? "",
-                            buyer_name: b.buyer_name ?? "",
-                            buyer_tax_no: b.buyer_tax_no ?? "",
-                            currency: b.currency,
-                            total_amount: String(b.total_amount ?? 0),
-                            tax_amount: String(b.tax_amount ?? 0),
-                            amount_excl_tax: String(b.amount_excl_tax ?? 0),
-                          });
-                        }}
-                      >
-                        <FileText className="h-4 w-4" /> 详情
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        {b.status !== "paid" && b.status !== "disputed" && b.bill_type === "receivable" && (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => { setPaying(b); setPayRef(""); }}
+                          >
+                            <Wallet className="h-4 w-4" /> 回款
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setEditing(b);
+                            setEditFields({
+                              bill_no: b.bill_no,
+                              seller_name: b.seller_name ?? "",
+                              seller_tax_no: b.seller_tax_no ?? "",
+                              buyer_name: b.buyer_name ?? "",
+                              buyer_tax_no: b.buyer_tax_no ?? "",
+                              currency: b.currency,
+                              total_amount: String(b.total_amount ?? 0),
+                              tax_amount: String(b.tax_amount ?? 0),
+                              amount_excl_tax: String(b.amount_excl_tax ?? 0),
+                            });
+                          }}
+                        >
+                          <FileText className="h-4 w-4" /> 详情
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -254,6 +290,11 @@ export function Bills() {
                   </pre>
                 </div>
               )}
+              {editing.matched_booking_id && (
+                <div className="col-span-2 text-xs bg-emerald-50 border border-emerald-200 p-2 rounded">
+                  ✅ 已自动对账: <Link2 className="inline h-3 w-3" /> Booking ID {editing.matched_booking_id} · 匹配度 {(editing.match_score ?? 0) * 100 | 0}%
+                </div>
+              )}
             </div>
           )}
           <DialogFooter>
@@ -285,6 +326,51 @@ export function Bills() {
             </Button>
             <Button variant="ghost" onClick={() => setEditing(null)}>
               <X className="h-4 w-4" /> 关闭
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 回款登记 Dialog */}
+      <Dialog open={!!paying} onOpenChange={(o) => !o && setPaying(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>回款登记 — {paying?.bill_no}</DialogTitle>
+          </DialogHeader>
+          {paying && (
+            <div className="space-y-3">
+              <div className="text-sm bg-slate-50 p-3 rounded">
+                <div>金额: <span className="font-mono font-semibold">{formatMoney(paying.total_amount, paying.currency)}</span></div>
+                <div className="text-xs text-slate-500 mt-1">客户: {paying.buyer_name ?? "—"}</div>
+              </div>
+              <div className="space-y-1">
+                <Label>支付方式</Label>
+                <Select value={payMethod} onValueChange={setPayMethod}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bank_transfer">银行转账</SelectItem>
+                    <SelectItem value="alipay">支付宝</SelectItem>
+                    <SelectItem value="wechat">微信</SelectItem>
+                    <SelectItem value="cash">现金</SelectItem>
+                    <SelectItem value="cheque">支票</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>支付流水号 (可选)</Label>
+                <Input value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder="TXN-20260820-001" />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              onClick={() => paying && payBill.mutate({ id: paying.id, method: payMethod, ref: payRef || undefined })}
+              disabled={payBill.isPending}
+            >
+              <Wallet className="h-4 w-4" /> 确认登记
+            </Button>
+            <Button variant="ghost" onClick={() => setPaying(null)}>
+              取消
             </Button>
           </DialogFooter>
         </DialogContent>
