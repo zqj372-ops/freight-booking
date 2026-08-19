@@ -1,0 +1,27 @@
+{
+  "MAERSK": {
+    "label_keywords": ["MAERSK LINE", "MAERSK"],
+    "so_number_patterns": [
+      "(?:Booking\\s*No|S/O|SO)\\s*[:：]?\\s*([A-Z0-9\\-]{8,})",
+      "\\b(\\d{9})\\b"
+    ],
+    "vessel_pattern": "(?:Vessel|Ship)\\s*[:：]?\\s*([A-Z][A-Z\\s\\.\\-]+?)(?:\\s*V\\.|\\n|$)",
+    "pol_pattern": "POL\\s*[:：]?\\s*([A-Z\\s]+?)(?:\\s*→|\\n|POD|$)",
+    "pod_pattern": "POD\\s*[:：]?\\s*([A-Z\\s]+?)(?:\\s*→|\\n|$)",
+    "etd_label": "ETD",
+    "eta_label": "ETA",
+    "container_pattern": "(\\d+)\\s*[xX×]\\s*(20GP|40GP|40HQ|45HQ)"
+  },
+  "MSC": {
+    "label_keywords": ["MSC"],
+    "so_number_patterns": [
+      "(?:Booking\\s*No|S/O|SO)\\s*[:：]?\\s*([A-Z0-9\\-]{8,})"
+    ]
+  },
+  "COSCO": {
+    "label_keywords": ["COSCO", "中远海运"],
+    "so_number_patterns": [
+      "(?:Booking\\s*No|S/O|SO)\\s*[:：]?\\s*([A-Z0-9\\-]{8,})"
+    ]
+  }
+}

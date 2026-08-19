@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads (sample, keep directory)
+uploads/so/*
+uploads/bills/*
+uploads/attachments/*
+!uploads/so/.gitkeep
+!uploads/bills/.gitkeep
+!uploads/attachments/.gitkeep
+
+# OCR models (downloaded at runtime)
+.paddleocr/
+
+# PaddlePaddle
+__paddleocr__/
+paddleocr_models/

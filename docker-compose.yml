@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    container_name: freight-api
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  ui:
+    build: .
+    container_name: freight-ui
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      API_BASE: http://api:8000
+    ports:
+      - "8501:8501"
+    command: ["streamlit", "run", "frontend/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+
+  # 可选: PostgreSQL (生产用, 切换 DATABASE_URL 即可)
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: freight-db
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: freight
+  #     POSTGRES_PASSWORD: freight_pwd
+  #     POSTGRES_DB: freight
+  #   volumes:
+  #     - freight_pgdata:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+
+# volumes:
+#   freight_pgdata:

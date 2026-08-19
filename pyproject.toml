@@ -1,0 +1,77 @@
+[project]
+name = "freight-booking"
+version = "0.1.0"
+description = "二掌柜订舱系统 - 货代 SO 识别 + 邮件订舱 + 账单 OCR + 代理管理"
+authors = [{ name = "zqj372-ops" }]
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+dependencies = [
+    # Web framework
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.20",
+    # Database
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "aiosqlite>=0.20",
+    "asyncpg>=0.30",
+    # Validation
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "email-validator>=2.2",
+    # Templates
+    "jinja2>=3.1",
+    # Email
+    "aiosmtplib>=3.0",
+    # File parsing
+    "python-magic>=0.4.27",
+    "pypdf>=5.0",
+    "pdf2image>=1.17",
+    "pillow>=11.0",
+    # HTTP
+    "httpx>=0.28",
+    "tenacity>=9.0",
+    # Logging
+    "loguru>=0.7",
+    # Date/Time
+    "python-dateutil>=2.9",
+]
+
+[project.optional-dependencies]
+ocr = [
+    # OCR - 安装较重,按需启用
+    "paddleocr>=2.7",
+    "paddlepaddle>=2.6",
+]
+ui = [
+    "streamlit>=1.40",
+]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.28",
+    "ruff>=0.7",
+    "black>=24.10",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
