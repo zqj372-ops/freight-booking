@@ -612,13 +612,17 @@ async def build_shipment_list_items(
         partner_name = ""
         if s.current_partner_id and s.current_partner_id in partners_by_id:
             partner_name = partners_by_id[s.current_partner_id].name
-        carrier_partner = f"{carrier} {partner_name}".strip() if partner_name else carrier
+        # 避免重复 (e.g. carrier="COSCO" + partner.name 含 "COSCO" → "COSCO COSCO 华南")
+        if partner_name and partner_name != carrier and carrier not in partner_name:
+            carrier_partner = f"{carrier} · {partner_name}".strip()
+        else:
+            carrier_partner = partner_name or carrier
 
         # 船名航次 (来自 current BC)
         bc = bc_by_ship.get(s.id)
         vessel_voyage = ""
         if bc:
-            vessel_voyage = f"{bc.vessel or ''} {bc.voyage or ''}".strip()
+            vessel_voyage = f"{bc.vessel_name or ''} {bc.voyage_no or ''}".strip()
         if not vessel_voyage:
             vessel_voyage = "—"
 
