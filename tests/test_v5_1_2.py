@@ -253,7 +253,8 @@ async def test_booking_confirmation_version_supersede() -> None:
             "etd": "2026-09-18", "eta": "2026-10-08",
         })).json()
         assert bc2["version"] == 2
-        assert bc2["is_current"] is True
+        # P1#4 修复: v1 已 accepted + v2 received (未审核) 时, v2 不应 is_current=True
+        assert bc2["is_current"] is False, "v2 不应 is_current (v1 已 accepted)"
 
         # 接受 v2
         await c.post(f"/api/v2/booking-confirmations/{bc2['id']}/accept", json={"reason": "船期改期, 接受 v2"})

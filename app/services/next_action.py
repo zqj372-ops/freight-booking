@@ -344,7 +344,13 @@ async def derive_document_checklist(
         kind = _infer_doc_kind(d)
         docs_by_kind.setdefault(kind, []).append(d)
 
-    # 查 BC
+    # 查 BC (P1#4 修复: 双 current 时也安全 — 优先 ACCEPTED, 再按 version desc)
+    from sqlalchemy import case
+    from app.models.booking_confirmation import BookingConfirmationStatus
+    accepted_priority = case(
+        (BookingConfirmation.status == BookingConfirmationStatus.ACCEPTED, 0),
+        else_=1,
+    )
     stmt = (
         select(BookingConfirmation)
         .where(
@@ -352,8 +358,10 @@ async def derive_document_checklist(
             BookingConfirmation.shipment_id == shipment_id,
             BookingConfirmation.is_current == True,  # noqa: E712
         )
+        .order_by(accepted_priority, BookingConfirmation.version.desc())
+        .limit(1)
     )
-    bc = (await db.execute(stmt)).scalar_one_or_none()
+    bc = (await db.execute(stmt)).scalars().first()
     has_so = bc is not None
 
     # 查 ATD
@@ -563,14 +571,28 @@ async def build_shipment_list_items(
         if e.severity.value == "critical":
             opex_by_ship[e.shipment_id] = max(opex_by_ship[e.shipment_id], 3)
 
-    # 3. current BC
-    stmt = select(BookingConfirmation).where(
-        BookingConfirmation.organization_id == organization_id,
-        BookingConfirmation.shipment_id.in_(ship_ids),
-        BookingConfirmation.is_current == True,  # noqa: E712
+    # 3. current BC (P1#4 修复: 双 current 时优先 ACCEPTED, 不泄露未审核 v2)
+    from sqlalchemy import case
+    from app.models.booking_confirmation import BookingConfirmationStatus
+    accepted_priority = case(
+        (BookingConfirmation.status == BookingConfirmationStatus.ACCEPTED, 0),
+        else_=1,
+    )
+    stmt = (
+        select(BookingConfirmation)
+        .where(
+            BookingConfirmation.organization_id == organization_id,
+            BookingConfirmation.shipment_id.in_(ship_ids),
+            BookingConfirmation.is_current == True,  # noqa: E712
+        )
+        .order_by(accepted_priority, BookingConfirmation.version.desc())
     )
     bcs = (await db.execute(stmt)).scalars().all()
-    bc_by_ship: dict[str, BookingConfirmation] = {b.shipment_id: b for b in bcs}
+    # 已排序, 首个 ACCEPTED 优先, 后续同 shipment 的覆盖要被跳过
+    bc_by_ship: dict[str, BookingConfirmation] = {}
+    for b in bcs:
+        if b.shipment_id not in bc_by_ship:
+            bc_by_ship[b.shipment_id] = b
 
     # 4. container (1.5 强制 1 柜)
     stmt = select(Container).where(
