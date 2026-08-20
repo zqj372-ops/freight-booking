@@ -19,6 +19,12 @@ from app.models.email_ingestion import (  # noqa: F401
 from app.models.organization import Organization  # noqa: F401
 from app.models.partner import Partner  # noqa: F401
 from app.models.audit import AuditLog  # noqa: F401
+from app.models.shipment import Shipment, ShipmentStage  # noqa: F401
+from app.models.booking_request import BookingRequest, BookingRequestStatus  # noqa: F401
+from app.models.booking_confirmation import (  # noqa: F401
+    BookingConfirmation, BookingConfirmationStatus, BookingConfirmationReviewStatus,
+)
+from app.models.container import Container, ContainerStatus  # noqa: F401
 
 __all__ = [
     # v0.4
@@ -32,4 +38,8 @@ __all__ = [
     "EmailIngestion", "IngestionSource", "IngestionStatus", "ProcessedEmail",
     # v0.5
     "Organization", "Partner", "AuditLog",
+    "Shipment", "ShipmentStage",
+    "BookingRequest", "BookingRequestStatus",
+    "BookingConfirmation", "BookingConfirmationStatus", "BookingConfirmationReviewStatus",
+    "Container", "ContainerStatus",
 ]
