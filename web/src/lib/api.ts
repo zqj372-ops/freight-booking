@@ -524,11 +524,159 @@ export interface AuditLog {
   created_at: string;
 }
 
+// ===== BookingRequest v0.5 =====
+
+export interface BookingRequest {
+  id: string;
+  organization_id: string;
+  shipment_id: string;
+  partner_id: string;
+  booking_request_no: string;
+  request_version: number;
+  supersedes_id: string | null;
+  cargo_snapshot: Record<string, unknown>;
+  requested_etd: string;
+  requested_pol: string;
+  requested_pod: string;
+  requested_container_type: string;
+  requested_container_count: number;
+  carrier_preference: string | null;
+  email_thread_id: string | null;
+  email_message_id: string | null;
+  status: "draft" | "sent" | "acknowledged" | "confirmed" | "rejected" | "cancelled";
+  sent_at: string | null;
+  acknowledged_at: string | null;
+  confirmed_at: string | null;
+  rejected_at: string | null;
+  rejection_reason: string | null;
+  cancelled_at: string | null;
+  cancellation_reason: string | null;
+  expected_response_by: string | null;
+  response_sla_hours: number | null;
+  remark: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ===== EmailThread v0.5 =====
+
+export interface EmailThread {
+  id: string;
+  organization_id: string;
+  subject: string;
+  subject_prefix: string | null;
+  shipment_id: string | null;
+  booking_request_id: string | null;
+  partner_id: string | null;
+  status: "active" | "closed" | "spam";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmailMessage {
+  id: string;
+  organization_id: string;
+  thread_id: string;
+  direction: "inbound" | "outbound";
+  message_id: string | null;
+  in_reply_to: string | null;
+  references: string | null;
+  from_addr: string;
+  to_addrs: string[];
+  cc_addrs: string[];
+  subject: string;
+  body_text: string | null;
+  body_html: string | null;
+  received_at: string | null;
+  sent_at: string | null;
+  status: "draft" | "queued" | "sent" | "failed" | "received" | "processing" | "processed" | "ignored";
+  error: string | null;
+  retry_count: number;
+  source: string;
+  raw_eml_path: string | null;
+  matched_shipment_id: string | null;
+  matched_booking_request_id: string | null;
+  match_confidence: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmailThreadWithMessages extends EmailThread {
+  messages: EmailMessage[];
+}
+
+// ===== OperationalException v0.5 =====
+
+export interface OperationalException {
+  id: string;
+  organization_id: string;
+  shipment_id: string;
+  code: string;
+  severity: "info" | "warning" | "critical";
+  status: "open" | "resolved" | "auto_closed";
+  detected_at: string;
+  detected_by: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  resolved_by_name: string | null;
+  resolution: string | null;
+  related_milestone_id: string | null;
+  related_task_id: string | null;
+  context: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExceptionSummary {
+  days: number;
+  total_count: number;
+  open_count: number;
+  resolved_count: number;
+  auto_closed_count: number;
+  resolution_rate: number;
+  by_severity: Record<string, number>;
+  by_code: Array<{ code: string; total: number; open: number; resolved: number; auto_closed: number }>;
+  by_shipment_top: Array<{ shipment_id: string; job_no: string; open_count: number }>;
+}
+
+// ===== KPI Dashboard v0.5 =====
+
+export interface KpiCompletenessField {
+  field: string;
+  filled: number;
+  total: number;
+  rate: number;
+}
+
+export interface KpiDashboard {
+  days: number;
+  total_shipments: number;
+  in_progress: number;
+  completed: number;
+  cancelled: number;
+  cancel_rate: number;
+  completeness: {
+    avg_rate: number;
+    fields: KpiCompletenessField[];
+  };
+  by_customer: Array<{ customer_name: string; count: number }>;
+  by_route: Array<{ route: string; pol: string; pod: string; count: number }>;
+  by_carrier: Array<{ carrier: string; count: number }>;
+  monthly_trend: Array<{ month: string; count: number }>;
+  response_time: {
+    samples: number;
+    avg_hours: number | null;
+    p50_hours: number | null;
+    p90_hours: number | null;
+  };
+}
+
 // ===== v0.5 API Client =====
 
 export const v5Api = {
   // Dashboard
   getDashboard: () => api.get<DashboardStats>("/dashboard/").then((r) => r.data),
+  getKpi: (days = 90) => api.get<KpiDashboard>("/dashboard/kpi", { params: { days } }).then((r) => r.data),
 
   // Shipments
   listShipments: (params: { stage?: string; limit?: number; offset?: number; search?: string } = {}) =>
@@ -548,6 +696,24 @@ export const v5Api = {
     api.get<Task[]>(`/api/v2/workflow/shipments/${id}/tasks`).then((r) => r.data),
   getAuditLogs: (id: string) =>
     api.get<AuditLog[]>(`/audit-logs/?entity_type=shipment&entity_id=${id}`).then((r) => r.data),
+
+  // BookingRequest
+  listBookingRequests: (params: { shipment_id?: string; status?: string; limit?: number; offset?: number } = {}) =>
+    api.get<BookingRequest[]>("/booking-requests/", { params }).then((r) => r.data),
+  getBookingRequest: (id: string) =>
+    api.get<BookingRequest>(`/booking-requests/${id}`).then((r) => r.data),
+
+  // EmailThread
+  listEmailThreads: (params: { shipment_id?: string; status?: string; limit?: number; offset?: number } = {}) =>
+    api.get<EmailThread[]>("/emails/threads", { params }).then((r) => r.data),
+  getEmailThread: (id: string) =>
+    api.get<EmailThreadWithMessages>(`/emails/threads/${id}`).then((r) => r.data),
+
+  // OperationalException (全局, 跨 shipment)
+  listExceptions: (params: { status?: string; severity?: string; code?: string; shipment_id?: string; days?: number; limit?: number; offset?: number } = {}) =>
+    api.get<OperationalException[]>("/exceptions/", { params }).then((r) => r.data),
+  getExceptionSummary: (days = 30) =>
+    api.get<ExceptionSummary>("/exceptions/summary", { params: { days } }).then((r) => r.data),
 
   // Partners
   listPartners: () => api.get<Partner[]>("/partners/").then((r) => r.data),

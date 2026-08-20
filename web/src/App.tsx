@@ -6,6 +6,11 @@ import { ShipmentDetail } from "@/pages/ShipmentDetail";
 import { Partners } from "@/pages/Partners";
 import { LegacyPlaceholder } from "@/pages/LegacyPlaceholder";
 import { Settings } from "@/pages/Settings";
+import { BookingRequests } from "@/pages/BookingRequests";
+import { BookingRequestDetail } from "@/pages/BookingRequestDetail";
+import { EmailThreads } from "@/pages/EmailThreads";
+import { EmailThreadDetail } from "@/pages/EmailThreadDetail";
+import { OperationsDashboard } from "@/pages/OperationsDashboard";
 
 export default function App() {
   return (
@@ -15,6 +20,11 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="/shipments" element={<Shipments />} />
         <Route path="/shipments/:id" element={<ShipmentDetail />} />
+        <Route path="/booking-requests" element={<BookingRequests />} />
+        <Route path="/booking-requests/:id" element={<BookingRequestDetail />} />
+        <Route path="/email-threads" element={<EmailThreads />} />
+        <Route path="/email-threads/:id" element={<EmailThreadDetail />} />
+        <Route path="/ops" element={<OperationsDashboard />} />
         <Route path="/partners" element={<Partners />} />
         <Route path="/settings" element={<Settings />} />
         {/* v0.4 兼容路由 (deprecated) - 引导到 v0.5 */}

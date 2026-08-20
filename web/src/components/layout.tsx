@@ -9,6 +9,9 @@ import {
   Receipt,
   Settings as SettingsIcon,
   Anchor,
+  Mail,
+  ClipboardList,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -16,9 +19,12 @@ import { Badge } from "@/components/ui/badge";
 const nav = [
   { to: "/", icon: LayoutDashboard, label: "工作台" },
   { to: "/shipments", icon: Package, label: "业务单" },
+  { to: "/booking-requests", icon: ClipboardList, label: "订舱申请" },
+  { to: "/email-threads", icon: Mail, label: "邮件中心" },
   { to: "/tasks", icon: ListTodo, label: "任务中心", v06: true },
-  { to: "/so", icon: Inbox, label: "SO 收件箱", legacy: true },
   { to: "/exceptions", icon: AlertTriangle, label: "异常中心", v06: true },
+  { to: "/ops", icon: Activity, label: "运营驾驶舱" },
+  { to: "/so", icon: Inbox, label: "SO 收件箱", legacy: true },
   { to: "/partners", icon: Users, label: "合作方" },
   { to: "/bills", icon: Receipt, label: "账单", legacy: true },
   { to: "/settings", icon: SettingsIcon, label: "系统设置" },

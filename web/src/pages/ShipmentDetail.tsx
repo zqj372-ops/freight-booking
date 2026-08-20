@@ -1,7 +1,7 @@
-// v0.5 ShipmentDetail 业务详情 (8 业务阶段进度条 + 6 tab)
+// v0.5 ShipmentDetail 业务详情 (8 业务阶段进度条 + 8 tab: 概览/节点/文件/柜/费用/日志/订舱/邮件)
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { v5Api } from "@/lib/api";
+import { v5Api, type BookingRequest, type EmailThread, type OperationalException } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -87,6 +87,22 @@ export function ShipmentDetail() {
   const msQ = useQuery({ queryKey: ["milestones", id], queryFn: () => v5Api.getMilestones(id!), enabled: !!id });
   const taskQ = useQuery({ queryKey: ["tasks", id], queryFn: () => v5Api.getTasks(id!), enabled: !!id });
   const auditQ = useQuery({ queryKey: ["audit", id], queryFn: () => v5Api.getAuditLogs(id!), enabled: !!id });
+  // 阶段 3 第二批: 订舱申请 + 邮件 + 异常
+  const brQ = useQuery<BookingRequest[]>({
+    queryKey: ["shipment-booking-requests", id],
+    queryFn: () => v5Api.listBookingRequests({ shipment_id: id!, limit: 50 }),
+    enabled: !!id,
+  });
+  const etQ = useQuery<EmailThread[]>({
+    queryKey: ["shipment-email-threads", id],
+    queryFn: () => v5Api.listEmailThreads({ shipment_id: id!, limit: 50 }),
+    enabled: !!id,
+  });
+  const exQ = useQuery<OperationalException[]>({
+    queryKey: ["shipment-exceptions", id],
+    queryFn: () => v5Api.listExceptions({ shipment_id: id!, days: 90, limit: 50 }),
+    enabled: !!id,
+  });
 
   if (shipQ.isLoading) return <div className="p-8">加载中...</div>;
   if (shipQ.error) return <div className="p-8 text-red-600">{String(shipQ.error)}</div>;
@@ -126,7 +142,9 @@ export function ShipmentDetail() {
           <TabsTrigger value="milestones">节点 ({msQ.data?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="files">文件 ({clQ.data?.total_completed ?? 0}/{clQ.data?.total_required ?? 0})</TabsTrigger>
           <TabsTrigger value="container">柜 ({contQ.data?.length ?? 0})</TabsTrigger>
-          <TabsTrigger value="fees">费用</TabsTrigger>
+          <TabsTrigger value="booking">订舱 ({brQ.data?.length ?? 0})</TabsTrigger>
+          <TabsTrigger value="emails">邮件 ({etQ.data?.length ?? 0})</TabsTrigger>
+          <TabsTrigger value="exceptions">异常 ({exQ.data?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="log">日志 ({auditQ.data?.length ?? 0})</TabsTrigger>
         </TabsList>
 
@@ -275,11 +293,151 @@ export function ShipmentDetail() {
           </Card>
         </TabsContent>
 
-        {/* 费用 Tab */}
-        <TabsContent value="fees">
+        {/* 订舱申请 Tab */}
+        <TabsContent value="booking">
           <Card>
-            <CardContent className="p-8 text-center text-gray-500">
-              费用 Tab (阶段 3 后续接 Bill v0.5 endpoint)
+            <CardContent className="p-0">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-600">
+                  <tr>
+                    <th className="p-3 text-left">编号</th>
+                    <th className="p-3 text-left">版本</th>
+                    <th className="p-3 text-left">状态</th>
+                    <th className="p-3 text-left">请求内容</th>
+                    <th className="p-3 text-left">柜型×数</th>
+                    <th className="p-3 text-left">发送时间</th>
+                    <th className="p-3 text-left">响应时长</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(brQ.data ?? []).map((br) => (
+                    <tr
+                      key={br.id}
+                      className="border-t hover:bg-blue-50 cursor-pointer"
+                      onClick={() => nav(`/booking-requests/${br.id}`)}
+                    >
+                      <td className="p-3 font-mono text-xs">{br.booking_request_no}</td>
+                      <td className="p-3 text-xs">v{br.request_version}</td>
+                      <td className="p-3">
+                        <Badge className={
+                          br.status === "confirmed" ? "bg-green-100 text-green-800" :
+                          br.status === "rejected" ? "bg-red-100 text-red-800" :
+                          br.status === "sent" ? "bg-blue-100 text-blue-800" :
+                          br.status === "acknowledged" ? "bg-purple-100 text-purple-800" :
+                          "bg-gray-100 text-gray-800"
+                        }>
+                          {br.status}
+                        </Badge>
+                      </td>
+                      <td className="p-3 text-xs">
+                        {br.requested_pol}→{br.requested_pod} · ETD {br.requested_etd}
+                      </td>
+                      <td className="p-3 text-xs">
+                        {br.requested_container_type}×{br.requested_container_count}
+                      </td>
+                      <td className="p-3 text-xs">{fmtDate(br.sent_at)}</td>
+                      <td className="p-3 text-xs">
+                        {br.sent_at && br.confirmed_at
+                          ? `${((new Date(br.confirmed_at).getTime() - new Date(br.sent_at).getTime()) / 3600000).toFixed(1)}h`
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                  {(brQ.data ?? []).length === 0 && (
+                    <tr><td colSpan={7} className="p-8 text-center text-gray-400">暂无订舱申请</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* 邮件 Tab */}
+        <TabsContent value="emails">
+          <div className="space-y-2">
+            {(etQ.data ?? []).map((t) => (
+              <Card
+                key={t.id}
+                className="cursor-pointer hover:bg-blue-50"
+                onClick={() => nav(`/email-threads/${t.id}`)}
+              >
+                <CardContent className="p-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="font-medium text-sm">{t.subject}</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {t.subject_prefix && <span className="font-mono mr-2">{t.subject_prefix}</span>}
+                        创建 {fmtDate(t.created_at)} · 最近活动 {fmtDate(t.updated_at)}
+                      </div>
+                    </div>
+                    <Badge
+                      className={
+                        t.status === "active"
+                          ? "bg-green-100 text-green-800"
+                          : t.status === "closed"
+                          ? "bg-gray-200 text-gray-500"
+                          : "bg-red-100 text-red-800"
+                      }
+                    >
+                      {t.status}
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+            {(etQ.data ?? []).length === 0 && (
+              <Card>
+                <CardContent className="p-8 text-center text-gray-400">暂无邮件线程</CardContent>
+              </Card>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* 异常 Tab */}
+        <TabsContent value="exceptions">
+          <Card>
+            <CardContent className="p-0">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-600">
+                  <tr>
+                    <th className="p-3 text-left">代码</th>
+                    <th className="p-3 text-left">严重度</th>
+                    <th className="p-3 text-left">状态</th>
+                    <th className="p-3 text-left">检测时间</th>
+                    <th className="p-3 text-left">处理说明</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(exQ.data ?? []).map((e) => (
+                    <tr key={e.id} className="border-t">
+                      <td className="p-3 font-mono text-xs">{e.code}</td>
+                      <td className="p-3">
+                        <Badge className={
+                          e.severity === "critical" ? "bg-red-100 text-red-800" :
+                          e.severity === "warning" ? "bg-yellow-100 text-yellow-800" :
+                          "bg-blue-100 text-blue-800"
+                        }>
+                          {e.severity}
+                        </Badge>
+                      </td>
+                      <td className="p-3">
+                        <Badge className={
+                          e.status === "open" ? "bg-orange-100 text-orange-800" :
+                          e.status === "resolved" ? "bg-green-100 text-green-800" :
+                          "bg-gray-200 text-gray-500"
+                        }>
+                          {e.status}
+                        </Badge>
+                      </td>
+                      <td className="p-3 text-xs">{fmtDate(e.detected_at)}</td>
+                      <td className="p-3 text-xs">{e.resolution ?? "—"}</td>
+                    </tr>
+                  ))}
+                  {(exQ.data ?? []).length === 0 && (
+                    <tr><td colSpan={5} className="p-8 text-center text-gray-400">无异常</td></tr>
+                  )}
+                </tbody>
+              </table>
             </CardContent>
           </Card>
         </TabsContent>
