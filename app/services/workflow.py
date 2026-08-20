@@ -16,6 +16,7 @@ from app.models.operational_exception import (
     ExceptionStatus,
 )
 from app.models.task import TaskStatus
+from app.models._base import BusinessPhase, PhaseColor
 from app.models.booking_confirmation import BookingConfirmation, BookingConfirmationStatus
 from app.models.booking_request import BookingRequest
 from app.models.milestone import Milestone, MilestoneCode
@@ -28,10 +29,7 @@ from app.models.task import Task, TaskCode
 
 
 def derive_stage(milestones: Iterable[Milestone]) -> ShipmentStage:
-    """从 milestone 集合推导 Shipment.stage.
-
-    v0.5 简化: 不存 stage 计算结果, 每次查询时算. 写操作不硬改 stage 字段.
-    """
+    """从 milestone 集合推导 Shipment.stage (后端实现 9 个值)."""
     codes = {m.code for m in milestones}
     if MilestoneCode.EMPTY_RETURNED in codes:
         return ShipmentStage.COMPLETED
@@ -50,6 +48,83 @@ def derive_stage(milestones: Iterable[Milestone]) -> ShipmentStage:
     if MilestoneCode.BOOKING_REQUEST_SENT in codes:
         return ShipmentStage.BOOKING_IN_PROGRESS
     return ShipmentStage.DRAFT
+
+
+# v0.5 1.5: 8 业务阶段 (UI 进度条用, 1-8 编号, 颜色规则 5 色)
+_PHASE_MAP: list[tuple[set[MilestoneCode], BusinessPhase]] = [
+    ({MilestoneCode.EMPTY_RETURNED}, BusinessPhase.COMPLETED),
+    ({MilestoneCode.DEPARTED, MilestoneCode.ARRIVED_AT_POD, MilestoneCode.DELIVERED,
+      MilestoneCode.IN_TRANSIT}, BusinessPhase.DEPARTED),  # 7 开船到港
+    ({MilestoneCode.CUSTOMS_CLEARED}, BusinessPhase.CUSTOMS),  # 6 报关放行
+    ({MilestoneCode.SI_SUBMITTED, MilestoneCode.VGM_SUBMITTED}, BusinessPhase.SI_BL),  # 5 补料提单
+    ({MilestoneCode.CONTAINER_LOADED, MilestoneCode.CONTAINER_GATED_IN,
+      MilestoneCode.CONTAINER_PICKED_UP, MilestoneCode.EMPTY_RELEASE_AVAILABLE}, BusinessPhase.PICKUP_LOAD),  # 4
+    ({MilestoneCode.BOOKING_CONFIRMATION_ACCEPTED,
+      MilestoneCode.BOOKING_CONFIRMATION_RECEIVED}, BusinessPhase.SO_REVIEW),  # 3
+    ({MilestoneCode.BOOKING_REQUEST_SENT, MilestoneCode.BOOKING_REQUEST_ACKNOWLEDGED}, BusinessPhase.BOOKING),  # 2
+]
+
+
+def derive_business_phase(milestones: Iterable[Milestone]) -> BusinessPhase:
+    """v0.5 1.5: 从 Milestone 集合推导 8 业务阶段 (UI 进度条用).
+
+    返回 BusinessPhase 枚举值 (1-8). 进度条前端渲染: 当前阶段高亮, 已完成变绿, 等待外部变紫, 即将到期变黄, 逾期变红.
+    """
+    codes = {m.code for m in milestones}
+    for trigger_codes, phase in _PHASE_MAP:
+        if codes & trigger_codes:
+            return phase
+    return BusinessPhase.BUILD  # 1 建业务
+
+
+def derive_phase_color(
+    business_phase: BusinessPhase,
+    next_due_at: datetime | None = None,
+    has_open_exception: bool = False,
+) -> PhaseColor:
+    """v0.5 1.5: 推导当前阶段的 UI 颜色.
+
+    优先级: overdue (红) > approaching_deadline (黄) > waiting_external (紫) >
+             in_progress (蓝) > completed (绿) > not_started (灰)
+    """
+    now = datetime.now(timezone.utc)
+
+    # 红: 逾期 (有 open exception 或 截止已过)
+    if has_open_exception:
+        return PhaseColor.OVERDUE
+
+    # 黄: 即将到期 (4h 内)
+    if next_due_at is not None:
+        # SQLite 返回 naive datetime, 统一转 aware
+        if next_due_at.tzinfo is None:
+            next_due_at = next_due_at.replace(tzinfo=timezone.utc)
+        if (next_due_at - now).total_seconds() < 4 * 3600:
+            return PhaseColor.APPROACHING_DEADLINE
+
+    # 蓝: 正常进行
+    return PhaseColor.IN_PROGRESS
+
+
+def derive_phase_progress(milestones: Iterable[Milestone]) -> float:
+    """v0.5 1.5: 8 业务阶段进度 (0.0-1.0).
+
+    简单实现: 已触发的阶段编号 / 8. 后续 v0.6 可以按业务逻辑细化.
+    """
+    phase = derive_business_phase(milestones)
+    return round(phase.value / 8.0, 2)
+
+
+# 业务阶段中文名 (UI 渲染用)
+PHASE_LABELS: dict[BusinessPhase, str] = {
+    BusinessPhase.BUILD: "建业务",
+    BusinessPhase.BOOKING: "发订舱",
+    BusinessPhase.SO_REVIEW: "收/核 SO",
+    BusinessPhase.PICKUP_LOAD: "提柜装柜",
+    BusinessPhase.SI_BL: "补料提单",
+    BusinessPhase.CUSTOMS: "报关放行",
+    BusinessPhase.DEPARTED: "开船到港",
+    BusinessPhase.COMPLETED: "结案还柜",
+}
 
 
 # ========== milestone → task auto_close ==========

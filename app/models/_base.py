@@ -88,3 +88,122 @@ class JobNoResetPolicy(str, enum.Enum):
     DAILY = "daily"
     MONTHLY = "monthly"
     NEVER = "never"
+
+
+class BusinessPhase(int, enum.Enum):
+    """v0.5 1.5 业务阶段 8 段 (UI 进度条用, 1-8 编号)
+
+    推导逻辑 (see app/services/workflow.py derive_business_phase):
+    - Milestone 里最早到达的最高级 phase
+    - 没 milestone → 1
+    - departed/arrived → 7
+    - empty_returned → 8 (completed)
+    """
+
+    BUILD = 1  # 1 建业务 (draft)
+    BOOKING = 2  # 2 发订舱
+    SO_REVIEW = 3  # 3 收/核 SO
+    PICKUP_LOAD = 4  # 4 提柜装柜
+    SI_BL = 5  # 5 补料提单
+    CUSTOMS = 6  # 6 报关放行
+    DEPARTED = 7  # 7 开船到港
+    COMPLETED = 8  # 8 结案还柜
+
+
+class PhaseColor(str, enum.Enum):
+    """8 业务阶段进度条颜色 (UI 渲染)"""
+
+    COMPLETED = "completed"  # 绿
+    IN_PROGRESS = "in_progress"  # 蓝
+    WAITING_EXTERNAL = "waiting_external"  # 紫
+    APPROACHING_DEADLINE = "approaching_deadline"  # 黄 (within 4h)
+    OVERDUE = "overdue"  # 红
+    NOT_STARTED = "not_started"  # 灰
+
+
+class CustomsStatus(str, enum.Enum):
+    """v0.5 1.5 报关状态 (替代 Y/N)"""
+
+    PENDING = "pending"  # 待申报
+    SUBMITTING = "submitting"  # 申报中
+    RELEASED = "released"  # 已放行
+    REJECTED = "rejected"  # 退单
+    INSPECTING = "inspecting"  # 查验
+
+
+class InspectionStatus(str, enum.Enum):
+    """v0.5 1.5 查验状态 (替代 Y/N)"""
+
+    NOT_RECEIVED = "not_received"
+    RECEIVED = "received"
+    HANDLING = "handling"
+    COMPLETED = "completed"
+
+
+class RolledStatus(str, enum.Enum):
+    """v0.5 1.5 甩柜状态 (替代 Y/N)"""
+
+    NOT_HAPPENED = "not_happened"
+    SUSPECTED = "suspected"
+    CONFIRMED = "confirmed"
+    REALLOCATED = "reallocated"
+    CLOSED = "closed"
+
+
+class PaymentRequestStatus(str, enum.Enum):
+    """v0.5 1.5 请款/预付款状态"""
+
+    NOT_REQUESTED = "not_requested"
+    REQUESTED = "requested"
+    APPROVED = "approved"
+    PAID = "paid"
+
+
+class PaymentProofStatus(str, enum.Enum):
+    """v0.5 1.5 水单状态"""
+
+    NOT_PROVIDED = "not_provided"
+    PROVIDED = "provided"
+    CONFIRMED = "confirmed"
+
+
+class EmptyReturnStatus(str, enum.Enum):
+    """v0.5 1.5 还空柜状态"""
+
+    NOT_SCHEDULED = "not_scheduled"
+    SCHEDULED = "scheduled"
+    RETURNED = "returned"
+    OVERDUE = "overdue"
+    ABNORMAL = "abnormal"
+
+
+class BlProcessStatus(str, enum.Enum):
+    """v0.5 1.5 提单处理状态 (替代 Y/N)"""
+
+    NOT_STARTED = "not_started"
+    DRAFT_RECEIVED = "draft_received"
+    REVISING = "revising"
+    CONFIRMED = "confirmed"
+    ABNORMAL = "abnormal"
+
+
+class ExceptionLevel(str, enum.Enum):
+    """v0.5 1.5 异常等级 (替代 Y/N)"""
+
+    NORMAL = "normal"
+    GENERAL = "general"
+    IMPORTANT = "important"
+    URGENT = "urgent"
+
+
+# 业务阶段中文名 (UI 渲染用, v0.5 1.5)
+PHASE_LABELS: dict[int, str] = {
+    1: "建业务",
+    2: "发订舱",
+    3: "收/核 SO",
+    4: "提柜装柜",
+    5: "补料提单",
+    6: "报关放行",
+    7: "开船到港",
+    8: "结案还柜",
+}

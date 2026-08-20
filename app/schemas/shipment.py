@@ -17,6 +17,7 @@ ShipmentStageLiteral = Literal[
 class ShipmentBase(BaseModel):
     customer_partner_id: str | None = None
     customer_ref: str | None = None
+    customer_name: str | None = None
     pol: str = Field(..., min_length=3, max_length=64, description="Port of Loading")
     pod: str = Field(..., min_length=3, max_length=64, description="Port of Discharge")
     final_destination: str | None = None
@@ -88,6 +89,18 @@ class ShipmentRead(ShipmentBase):
     sales_user_name: str | None
     rate_reference: str | None
     rate_valid_until: date | None
+    # v0.5 1.5 新增触发字段
+    booking_request_sent_at: datetime | None
+    so_received_at: datetime | None
+    si_info_ready_at: datetime | None
+    bl_draft_received_at: datetime | None
+    sealed_at: datetime | None
+    cy_open_at: datetime | None
+    si_cutoff_at: datetime | None
+    vgm_cutoff_at: datetime | None
+    cy_cutoff_at: datetime | None
+    empty_return_due_at: datetime | None
+    last_updated_at: datetime | None
     created_at: datetime
     updated_at: datetime
 

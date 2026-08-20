@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import db_session
 from app.core.audit import Actor, write_audit_log
 from app.core.organization_context import get_default_organization
-from app.models._base import AuditAction
+from app.models._base import AuditAction, BusinessPhase, PHASE_LABELS
 from app.models.operational_exception import (
     ExceptionDetectedBy,
     ExceptionSeverity,
@@ -37,6 +37,9 @@ from app.schemas.milestone import (
 from app.services.workflow import (
     auto_close_exceptions_on_new_confirmation,
     auto_close_tasks_for_milestone,
+    derive_business_phase,
+    derive_phase_color,
+    derive_phase_progress,
     derive_stage,
     on_booking_confirmation_accepted,
     on_booking_request_sent,
@@ -138,6 +141,51 @@ async def get_derived_stage(
         "shipment_id": shipment_id,
         "derived_stage": stage.value,
         "milestone_count": len(ms),
+    }
+
+
+# v0.5 1.5: 8 业务阶段 + 颜色 + 进度 (UI 主列表和详情页进度条用)
+@router.get("/shipments/{shipment_id}/business-phase", response_model=dict)
+async def get_business_phase(
+    shipment_id: str, db: AsyncSession = Depends(db_session)
+) -> dict:
+    """v0.5 1.5: 8 业务阶段 (1-8) + 颜色 + 进度.
+
+    前端 React 主列表 / 详情页进度条直接调这个 endpoint.
+    """
+    stmt = select(Milestone).where(Milestone.shipment_id == shipment_id)
+    ms = (await db.execute(stmt)).scalars().all()
+    phase = derive_business_phase(ms)
+
+    # 查最近 open exception 决定颜色
+    ex_stmt = select(OperationalException).where(
+        OperationalException.shipment_id == shipment_id,
+        OperationalException.status == ExceptionStatus.OPEN,
+    )
+    has_open_ex = (await db.execute(ex_stmt)).scalars().first() is not None
+
+    # 找最近 due task
+    from app.models.task import Task
+    task_stmt = select(Task).where(
+        Task.shipment_id == shipment_id,
+        Task.status.in_([TaskStatus.PENDING, TaskStatus.IN_PROGRESS]),
+    ).order_by(Task.due_at.asc().nulls_last())
+    next_task = (await db.execute(task_stmt)).scalars().first()
+    next_due = next_task.due_at if next_task else None
+
+    color = derive_phase_color(phase, next_due, has_open_ex)
+    progress = derive_phase_progress(ms)
+
+    return {
+        "shipment_id": shipment_id,
+        "phase": phase.value,
+        "phase_label": PHASE_LABELS.get(phase.value, ""),
+        "color": color.value,
+        "progress": progress,
+        "milestone_count": len(ms),
+        "has_open_exception": has_open_ex,
+        "next_due_at": next_due.isoformat() if next_due else None,
+        "next_task_title": next_task.title if next_task else None,
     }
 
 

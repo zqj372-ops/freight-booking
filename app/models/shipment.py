@@ -74,6 +74,10 @@ class Shipment(Base, OrganizationScopedMixin, TimestampMixin):
         String(128), nullable=True, index=True,
         doc="客户委托编号",
     )
+    customer_name: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True,
+        doc="客户名称 (冗余于 customer_partner.name, 单独保留用于搜索/展示)",
+    )
     carrier_booking_no: Mapped[str | None] = mapped_column(
         String(64), nullable=True, index=True,
         doc="船公司/代理返回的 Booking Number, 来自 SO 接受后",
@@ -87,13 +91,58 @@ class Shipment(Base, OrganizationScopedMixin, TimestampMixin):
         doc="提单号",
     )
 
-    # ===== 业务阶段 =====
+    # ===== 业务阶段 (v0.5 1.5: 8 业务阶段触发字段) =====
     stage: Mapped[ShipmentStage] = mapped_column(
         Enum(ShipmentStage),
         default=ShipmentStage.DRAFT,
         nullable=False,
         index=True,
         doc="默认由 Milestone 推导, 手动调整留 audit log",
+    )
+    # 触发字段: 17 SLA 任务的时间戳 (Excel "建议新增字段" sheet)
+    booking_request_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        doc="订舱申请发送时间, /send 触发",
+    )
+    so_received_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        doc="SO 收到时间, 邮件/上传触发 (2h 发拖车行任务)",
+    )
+    si_info_ready_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        doc="补料资料齐全时间 (2h 发送 SI 任务)",
+    )
+    bl_draft_received_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        doc="提单草稿/修改件收到时间 (30min 核对任务)",
+    )
+    sealed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        doc="封柜时间 (2h 报关任务)",
+    )
+    cy_open_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        doc="开港时间 CY Open",
+    )
+    si_cutoff_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        doc="补料截止 SI Cut-off",
+    )
+    vgm_cutoff_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        doc="VGM 截止",
+    )
+    cy_cutoff_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        doc="截港时间 CY Cut-off (报关放行硬截止)",
+    )
+    empty_return_due_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        doc="还空柜截止时间 (滞箱超期风险)",
+    )
+    last_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        doc="最后更新时间 (主列表排序, 主管识别未跟进业务)",
     )
     cancellation_reason: Mapped[str | None] = mapped_column(
         Text, nullable=True,
