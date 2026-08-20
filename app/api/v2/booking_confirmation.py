@@ -217,6 +217,16 @@ async def accept_booking_confirmation(
     ):
         s.stage = ShipmentStage.BOOKED
     await db.commit()
+
+    # 1.4 workflow: 创建 milestone + 关 task + 开新 task + 自动 close 旧异常
+    # (auto_close 旧异常 + 创建新 schedule_changed exception 都在 service 内部)
+    from app.services.workflow import on_booking_confirmation_accepted
+    await on_booking_confirmation_accepted(
+        db,
+        organization_id=bc.organization_id,
+        shipment_id=bc.shipment_id,
+        booking_confirmation_id=bc.id,
+    )
     await db.refresh(s)
 
     await write_audit_log(

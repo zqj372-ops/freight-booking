@@ -12,6 +12,7 @@ from app.api.v2 import (
     container,
     document,
     email_thread,
+    workflow,
 )
 
 api_router = APIRouter()
@@ -24,3 +25,4 @@ api_router.include_router(booking_confirmation.router, prefix="/booking-confirma
 api_router.include_router(container.router, prefix="/containers", tags=["柜"])
 api_router.include_router(document.router, prefix="/documents", tags=["文件"])
 api_router.include_router(email_thread.router, prefix="/emails", tags=["邮件"])
+api_router.include_router(workflow.router, prefix="/workflow", tags=["工作流"])

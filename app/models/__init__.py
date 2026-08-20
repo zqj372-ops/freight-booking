@@ -33,6 +33,11 @@ from app.models.email import (  # noqa: F401
     EmailThread, EmailMessage,
     EmailThreadStatus, EmailDirection, EmailMessageStatus, EmailSource,
 )
+from app.models.milestone import Milestone, MilestoneCode, MilestoneSource  # noqa: F401
+from app.models.task import Task, TaskCode, TaskStatus  # noqa: F401
+from app.models.operational_exception import (  # noqa: F401
+    OperationalException, ExceptionCode, ExceptionSeverity, ExceptionStatus, ExceptionDetectedBy,
+)
 
 __all__ = [
     # v0.4
@@ -54,4 +59,7 @@ __all__ = [
     "DocumentSource", "DocumentType", "OcrStatus", "ParseStatus", "ExtractionMethod",
     "EmailThread", "EmailMessage",
     "EmailThreadStatus", "EmailDirection", "EmailMessageStatus", "EmailSource",
+    "Milestone", "MilestoneCode", "MilestoneSource",
+    "Task", "TaskCode", "TaskStatus",
+    "OperationalException", "ExceptionCode", "ExceptionSeverity", "ExceptionStatus", "ExceptionDetectedBy",
 ]
