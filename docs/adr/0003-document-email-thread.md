@@ -1,6 +1,6 @@
 # ADR-0003: Document, EmailThread, EmailMessage
 
-- 状态: DRAFT (待审)
+- 状态: **ACCEPTED** (2026-08-20 由 Autumn 拍板)
 - 日期: 2026-08-20
 - 适用范围: v0.5 core workflow reset
 
@@ -268,3 +268,13 @@ OCR → DocumentExtraction
 - [ ] DocumentExtraction 字段展示 + 置信度
 - [ ] 人工接受/拒绝 BookingConfirmation
 - [ ] Audit log 记录所有写操作
+
+## 11. 拍板结论 (2026-08-20, Autumn ACCEPTED)
+
+1. **inbound 附件目录**: `uploads/attachments/inbound/{email_account_id}/{year}/{month}/{email_message_id}/{filename}`. outbound 附件: `uploads/attachments/outbound/{email_message_id}/{filename}`. 文件 hash 用 SHA256, 唯一约束 `(organization_id, file_hash)` 用于去重.
+2. **DocumentExtraction 不自动重抽**: 第一次 OCR 后 fields 锁定, 如需重新抽取必须显式 POST `/api/v2/documents/{id}/re-extract` (创建新 DocumentExtraction 记录, 不覆盖). 旧 extraction 留档供审计.
+3. **邮件 thread 拆分**: 同一 subject 的 inbound 邮件优先用 `In-Reply-To` / `References` 找 thread. 都没有则按 `(organization_id, subject_normalized, partner_id)` 启发式归到同一 thread, 置信度 < 0.6 的归到 "未匹配邮件" 留人工分.
+4. **错配邮件**: 人工把 inbound 邮件标记为"未匹配/垃圾" → EmailMessage.status=`ignored`. 不删除原始 .eml 文件 (留作审计). 业务详情页"邮件"标签过滤 `status != ignored`.
+5. **PDF/图片预览**: 静态文件经 nginx `/files/attachments/{path}` 暴露 (FastAPI 写时加 Content-Disposition: inline). 上传时检查 mime_type, 只允许 `application/pdf` / `image/jpeg` / `image/png` / `image/tiff`.
+6. **OCR 三层策略**: 优先级 `可提取文本的 PDF (pdfplumber)` → `船公司模板 (regex)` → `PaddleOCR`. v0.5 不接 LLM 结构化抽取, LLM 留 v0.6 评估.
+7. **匹配三信号**: 邮件 → Shipment 匹配按优先级 `Message-ID In-Reply-To 找 thread` → `subject_prefix job_no` → `(customer_ref + carrier_booking_no + carrier)` 三元组. 任一信号命中且置信度 ≥ 0.8 自动匹配; 0.5~0.8 给候选待人工确认; < 0.5 入"未匹配邮件".

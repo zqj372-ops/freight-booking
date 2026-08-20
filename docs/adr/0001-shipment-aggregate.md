@@ -1,6 +1,6 @@
 # ADR-0001: Shipment 是核心聚合根
 
-- 状态: DRAFT (待审)
+- 状态: **ACCEPTED** (2026-08-20 由 Autumn 拍板)
 - 作者: Mavis (Mavis 起草, Autumn 拍板)
 - 日期: 2026-08-20
 - 适用范围: v0.5 core workflow reset
@@ -108,10 +108,60 @@ cancelled                  # 取消
 
 - **取消 (cancelled)**: 软删, 保留所有数据, 但不能再添加新 BookingRequest
 - **删除**: 不允许 (业务单必须留痕, 财务/审计需要)
+- **cancelled 终态**: cancelled 后不可再激活, 任何后续动作必须新建 Shipment
 
-## 3. 为什么这样设计
+## 3. Organization + Partner (上下文)
 
-### 3.1 SO 不再是主对象
+虽然当前只服务单一公司, 但架构上要预留多租户 (tenant-ready single-tenant).
+
+### 3.1 Organization
+
+```
+Organization:
+  id              uuid
+  slug            str unique          # 'default-company'
+  display_name    str                 # '二掌柜货代'
+  job_no_prefix   str default 'FB'    # 业务编号前缀
+  job_no_date_fmt str default 'YYYYMMDD'
+  job_no_seq_digits int default 4
+  job_no_reset_policy enum            # daily / monthly / never
+  created_at, updated_at
+```
+
+v0.5 只 seed 一行: `slug='default-company'`. UI 不暴露切换入口, 但 schema 完全支持多组织.
+
+### 3.2 Partner (合作方, 替代 v0.4 Agent)
+
+```
+Partner:
+  id              uuid
+  organization_id uuid (FK)
+  partner_type    enum                # customer / carrier / agent_l1 / agent_l2 / trucking / warehouse / customs_broker
+  name            str
+  short_code      str nullable        # 用于邮件主题快速引用
+  primary_email   str nullable
+  cc_emails       json (list of str) nullable
+  default_template_id uuid nullable (FK EmailTemplate)
+
+  # 专长
+  preferred_routes  json (list of str) nullable  # e.g. ["CNSHA-USLAX", "CNSHA-CAVAN"]
+  preferred_carriers json (list of str) nullable
+  response_sla_hours int nullable
+
+  # 档案
+  contact_person  str nullable
+  contact_phone   str nullable
+  remark          text nullable
+  is_active       bool default true
+
+  created_at, updated_at
+```
+
+v0.4 `Agent` 全量迁移到 `Partner`, `partner_type=agent_l1` 或 `agent_l2`. Agent.name → Partner.name, Agent.email → Partner.primary_email.
+
+## 4. 为什么这样设计
+
+### 4.1 SO 不再是主对象
 
 SO 是船公司回复的附件, 不是业务流程的起点. v0.4 的 `confirm_so() → 创建 Booking` 路径在 v0.5 删除.
 
@@ -129,7 +179,7 @@ OCR/解析 → BookingConfirmation (候选, 未接受)
 人工: 匹配到 Shipment → 接受 → 字段写入 Shipment
 ```
 
-### 3.2 一个 Shipment 多个 SO 版本
+### 4.2 一个 Shipment 多个 SO 版本
 
 v0.4 SO.booking_id 是 FK, 表达 "SO 属于哪个 Booking". 但业务上:
 
@@ -146,11 +196,11 @@ Shipment 1 ─── N BookingConfirmation (一个 Shipment 多个 SO 版本)
                 └─ supersedes_id (旧版指向新版)
 ```
 
-### 3.3 不再"自动从 SO 字段回填 Shipment"
+### 4.3 不再"自动从 SO 字段回填 Shipment"
 
 OCR 解析结果先进入 BookingConfirmation.extraction (DocumentExtraction), 字段来源标注清楚, 人工点击"接受"后才写入 Shipment. v0.4 的 `parse_so_text() → 直接 setattr(so, ...)` 这种隐式写入是 v0.4 的 bug, v0.5 不再存在.
 
-## 4. 受影响范围
+## 5. 受影响范围
 
 - 删除 v0.4 `Booking`, `SO` 模型 (替换为 `Shipment`, `BookingConfirmation`)
 - `Bill.booking_id` → `Bill.shipment_id` (迁移)
@@ -159,7 +209,7 @@ OCR 解析结果先进入 BookingConfirmation.extraction (DocumentExtraction), �
 - 老的 `/api/v1/bookings` `/api/v1/so` 暂时只读兼容层
 - 新的 `/api/v2/shipments` 是主用
 
-## 5. 验收标准 (v0.5 阶段 1)
+## 6. 验收标准 (v0.5 阶段 1)
 
 - [ ] Shipment model 创建, migration 通过
 - [ ] Pydantic schema 完整, OpenAPI 文档生成 OK
@@ -172,7 +222,7 @@ OCR 解析结果先进入 BookingConfirmation.extraction (DocumentExtraction), �
 - [ ] 阶段枚举值完整
 - [ ] 字段含义有 docstring 注释
 
-## 6. 不在本 ADR 范围
+## 7. 不在本 ADR 范围
 
 - BookingRequest / BookingConfirmation 详细设计 → ADR-0002
 - Document / EmailThread 设计 → ADR-0003
@@ -181,11 +231,11 @@ OCR 解析结果先进入 BookingConfirmation.extraction (DocumentExtraction), �
 - 数据迁移具体脚本 → docs/domain/migration-map.md
 - React 业务页面 → 阶段 3 (等 API 稳定)
 
-## 7. 待用户确认的问题
+## 8. 拍板结论 (2026-08-20, Autumn ACCEPTED)
 
-1. **job_no 编号规则**: `FB-YYYYMMDD-XXXX` (4位流水, 每天重置) OK 吗? 还是 `FB-YYYYMM-XXXXX` (5位流水每月重置) 或 UUID?
-2. **organization_id 默认值**: 用 `default-company` 字面量? 还是用 UUID? 默认组织要不要可视化显示在 UI?
-3. **container_count 默认 1**: v0.5 强制 1 个柜一个 Shipment, 数据库预留 N 柜 (子表). 是 v0.5 范围? 还是 v0.5 允许 N 柜 Shipment?
-4. **stage 转换规则**: 哪些 stage 是系统自动推, 哪些必须人工改? 是不是彻底禁止自动推 stage, 全部由 Milestone 触发?
-5. **删除策略**: 取消 (cancelled) 后还能再激活吗? 还是 cancelled 是终态?
-6. **轮询/分支判断**: 同一业务单同一供应商, 改了 ETD, 是新增一个 BookingRequest (版本号递增) 还是修改旧的? 我倾向新增 (审计好做)
+1. **job_no 编号规则**: 默认 `FB-YYYYMMDD-XXXX` (4位流水, 每天重置). 规则由 Organization 配置 (`job_no_prefix` / `job_no_date_fmt` / `job_no_seq_digits` / `job_no_reset_policy`), v0.5 全部用默认. UI 第一版不暴露规则编辑器.
+2. **organization_id 默认值**: seed 一行 `slug='default-company'`, UUID 形式. `UNIQUE(organization_id, job_no)` 而非 `UNIQUE(job_no)`. UI 第一版不显示组织切换.
+3. **container_count 默认 1**: v0.5 一个 Shipment 一个柜. 数据库预留 N 柜 (子表 `containers`), 但 v0.5 UI/业务都按 1 柜走. 多柜 v0.6.
+4. **stage 转换规则**: stage 字段保留在 Shipment (粗粒度, 9 个值). 默认由 Milestone 推导 (软联动, 见 ADR-0004 §3.1), 不在写操作里硬改. UI 提供"手动调整 stage"按钮给特殊场景 (例如客户取消).
+5. **删除策略**: cancelled 是终态. 任何后续动作必须新建 Shipment, 不允许 re-activate.
+6. **多版本管理**: 同一 Shipment 同一供应商改 ETD/改港/换船公司, 必创建新 BookingRequest (递增 `request_version` 1→2→3), 用 `supersedes_id` 链接. 不修改旧的, 审计和回滚都更友好.

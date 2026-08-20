@@ -1,6 +1,8 @@
 # Core Workflow 总览 (v0.5)
 
 > 业务单 Shipment 贯穿全流程, 任何子对象 (订舱/确认/文件/邮件/节点) 都挂在 Shipment 下.
+>
+> **领域冻结 (阶段 0) 已完成**. 进入阶段 1 (新 model + /api/v2) 等待用户拍板.
 
 ## 1. 业务主对象
 
@@ -129,20 +131,87 @@ BookingRequest sent 超过 24h
 
 ## 8. ADR 索引
 
-- [ADR-0001: Shipment 聚合根](0001-shipment-aggregate.md) ← **先审这份**
-- [ADR-0002: BookingRequest + BookingConfirmation](0002-booking-request-confirmation.md)
-- [ADR-0003: Document + EmailThread](0003-document-email-thread.md)
-- [ADR-0004: Milestone + Task + Exception](0004-milestone-task-exception.md)
-- [ADR-0005: AuditLog + LegacyEntityMap](0005-audit-legacy.md)
-- [migration-map.md](migration-map.md) ← 阶段 2 写
+- [ADR-0001: Shipment 聚合根 + Organization/Partner](0001-shipment-aggregate.md) (ACCEPTED)
+- [ADR-0002: BookingRequest + BookingConfirmation](0002-booking-request-confirmation.md) (ACCEPTED)
+- [ADR-0003: Document + EmailThread + EmailMessage + DocumentExtraction](0003-document-email-thread.md) (ACCEPTED)
+- [ADR-0004: Milestone + Task + OperationalException](0004-milestone-task-exception.md) (ACCEPTED)
+- [ADR-0005: AuditLog + LegacyEntityMap](0005-audit-legacy.md) (ACCEPTED)
+- [migration-map.md](migration-map.md) (阶段 2 数据迁移映射, 已写)
+- [execution-decisions.md](execution-decisions.md) (12 项拍板决议备查, 已写)
 
 ## 9. 当前状态 (2026-08-20)
 
-- [x] 仓库冻结 feature/v0.4-closed-loop, tag legacy-v0.4-pre-core-reset
-- [x] 新建 refactor/v0.5-core-workflow 分支
-- [x] 写完 5 份 ADR 草案
-- [ ] **等用户审完 ADR, 拍板字段/状态细节**
-- [ ] 阶段 1: 写 model + /api/v2 + 测试
-- [ ] 阶段 2: 数据迁移脚本
-- [ ] 阶段 3: React 业务页面重写
-- [ ] 阶段 4: 端到端验收 (本文件 §6)
+**阶段 0: 领域冻结 — ✅ 已完成**
+
+- [x] 仓库冻结 `feature/v0.4-closed-loop`, tag `legacy-v0.4-pre-core-reset`
+- [x] 新建 `refactor/v0.5-core-workflow` 分支 (commit 278e32d)
+- [x] 5 份 ADR 草案 (DRAFT)
+- [x] 5 份 ADR 由 Autumn 拍板 → 状态 ACCEPTED, 末尾加拍板结论
+- [x] ADR-0001 补 Organization + Partner 上下文表
+- [x] 写 `docs/domain/migration-map.md` (v0.4 → v0.5 字段映射, 12 个章节)
+- [x] 写 `docs/domain/execution-decisions.md` (12 项拍板决议备查 + 5 阶段路线 + 验证清单)
+- [x] ADR 末尾的 13 个待确认问题 → 全部回答并写入拍板结论
+
+**下一步 (阶段 1): 新模型 + /api/v2 — ⏳ 等用户拍板**
+
+- [ ] 12 个 SQLAlchemy model (Organization / Partner / Shipment / BookingRequest / BookingConfirmation / Container / Document / DocumentExtraction / EmailThread / EmailMessage / Milestone / Task / OperationalException / AuditLog / LegacyEntityMap)
+- [ ] 15+ Pydantic schema
+- [ ] /api/v2 路由 (shipments / booking-requests / booking-confirmations / documents / milestones / tasks / exceptions / audit-logs / email-threads / email-messages / partners / legacy-maps / dashboard)
+- [ ] alembic migration 重建 schema
+- [ ] 单元测试 + 端到端测试 (mock OCR + 模拟邮件)
+- [ ] /api/v1 不删, 暂时保留
+
+**后续阶段**
+
+- [ ] 阶段 2: 数据迁移 (Booking/SO/Agent/EmailLog/TrackingEvent/Bill FK → 新表 + LegacyEntityMap)
+- [ ] 阶段 3: React 业务页面重写 (Shipments 列表 + ShipmentDetail 多 tab + Partners + BookingConfirmationInbox + EmailThreads + OperationsDashboard + Tasks + Containers + Bills)
+- [ ] 阶段 4: 端到端验收 (本文件 §6 的 19 步主链路)
+
+## 10. 阶段 1 拆分方案 (待用户拍板)
+
+阶段 1 是个大工程, 建议拆 4 个 sub-task 顺序推进, 每 sub-task 独立 commit + push:
+
+### Sub-task 1.1: 领域基座
+- `app/models/_base.py` (软删除基类 / 组织上下文 / 时间戳 mixin 升级)
+- `app/models/organization.py` (Organization)
+- `app/models/partner.py` (Partner, 替代 Agent)
+- `app/models/audit.py` (AuditLog + actor 取值 from X-User-Id header)
+- alembic revision 1: 创建 organizations / partners / audit_logs 表
+- 测试: organization seed / partner CRUD / audit log 自动留痕
+
+### Sub-task 1.2: 业务聚合
+- `app/models/shipment.py` (Shipment)
+- `app/models/booking_request.py` (BookingRequest)
+- `app/models/booking_confirmation.py` (BookingConfirmation)
+- `app/models/container.py` (Container)
+- alembic revision 2: shipments / booking_requests / booking_confirmations / containers
+- /api/v2/shipments (POST/GET/PATCH/list)
+- /api/v2/booking-requests (CRUD + send + cancel)
+- /api/v2/booking-confirmations (create + accept + reject)
+- /api/v2/shipments/{id}/containers
+- 测试: Shipment 完整生命周期 (建单 → 发申请 → 收确认 → 接受)
+
+### Sub-task 1.3: 文件 + 邮件
+- `app/models/document.py` (Document + DocumentExtraction)
+- `app/models/email.py` (EmailThread + EmailMessage)
+- alembic revision 3: documents / document_extractions / email_threads / email_messages
+- /api/v2/documents (upload + ocr + match + accept)
+- /api/v2/email-threads (list + 详情 + 收件箱)
+- /api/v2/email-messages (outbound send + inbound 处理)
+- 邮件主题自动加 [job_no] 前缀
+- 邮件 → Shipment 自动匹配 (3 信号, 见 ADR-0003 §11.7)
+- 测试: 上传 SO PDF → OCR → 匹配 → 创建 BookingConfirmation
+
+### Sub-task 1.4: 状态分层 + 异常
+- `app/models/milestone.py` (Milestone)
+- `app/models/task.py` (Task + auto_close_on)
+- `app/models/operational_exception.py` (OperationalException)
+- alembic revision 4: milestones / tasks / operational_exceptions
+- /api/v2/shipments/{id}/milestones
+- /api/v2/shipments/{id}/tasks
+- /api/v2/shipments/{id}/exceptions
+- 派生 stage API (由 Milestone 集合推导)
+- 异常自动规则 (if-else, 4 种 auto_close)
+- 端到端 demo: 9 步主链路 (本文件 §6)
+
+**预估**: 每个 sub-task 1~2 轮对话完成, 4 个 sub-task 累计 5~8 轮.

@@ -1,6 +1,6 @@
 # ADR-0005: AuditLog + LegacyEntityMap
 
-- 状态: DRAFT (待审)
+- 状态: **ACCEPTED** (2026-08-20 由 Autumn 拍板)
 - 日期: 2026-08-20
 - 适用范围: v0.5 core workflow reset
 
@@ -121,3 +121,12 @@ LegacyEntityMap:
 - [ ] 迁移脚本: TrackingEvent → Milestone
 - [ ] 迁移报告: 数量 + needs_review 列表
 - [ ] v0.4 /api/v1 暂时只读 (兼容性)
+
+## 6. 拍板结论 (2026-08-20, Autumn ACCEPTED)
+
+1. **actor 取值**: JWT 暂不实现. v0.5 用 FastAPI Depends 从 request header 取 `X-User-Id` (UUID) + `X-User-Name`. 没传则用 system default: `actor_type=system, actor_user_id=NULL, actor_job_name='api_call'`. 前端在 `apiClient` 拦截器里塞 header. 等 v0.6 接真 JWT 时换实现, AuditLog schema 不变.
+2. **sensitive 操作 reason 强制**: `accept` / `reject` / `cancel` / `delete` 4 个 action 必须在 request body 带 `reason: str` (min 5 字符). 缺字段返回 422. 前端表单做 required 验证.
+3. **v0.4 历史数据不回填 audit**: AuditLog 从 v0.5 上线日清零. v0.4 字段修改历史丢失 (实际生产中本来也没记). 需要追溯时通过 LegacyEntityMap + 老数据库 snapshot 查.
+4. **LegacyEntityMap 暴露给用户**: API `GET /api/v2/legacy-maps?legacy_booking_no=XXX` 提供查询. 业务详情页加 "v0.4 来源" tab 显示当前 Shipment 对应的旧 Booking/SO 记录 (只读快照). 不会显示给客户, 只给内部操作员.
+5. **migration_status=needs_review 不阻塞**: 迁移后有 needs_review 记录时, 系统照常运行, 不强求人工处理. 但工作台有专属 "迁移待复核" 卡片提醒, 直到全部 resolved.
+6. **AuditLog 不做全文检索**: v0.5 简单 `entity_type + entity_id + created_at` 索引 + 分页. 全文搜索留 v0.6 (考虑 SQLite FTS5 或迁 Postgres).

@@ -1,6 +1,6 @@
 # ADR-0004: 状态分层 (Milestone + Task + OperationalException)
 
-- 状态: DRAFT (待审)
+- 状态: **ACCEPTED** (2026-08-20 由 Autumn 拍板)
 - 日期: 2026-08-20
 - 适用范围: v0.5 core workflow reset
 
@@ -225,3 +225,16 @@ v0.4 `TrackingEvent` 数据全量迁移到 `Milestone`, 字段映射:
 - [ ] 派生 stage API (GET /api/v2/shipments/{id}/derived-stage)
 - [ ] 自动规则: BookingRequest sent 超 24h 自动开 overdue exception
 - [ ] 审计: 任何 milestone 修改留 audit log
+
+## 6. 拍板结论 (2026-08-20, Autumn ACCEPTED)
+
+1. **stage 字段保留**: Shipment.stage 字段保留, 但默认由 Milestone 推导 (查询时计算, 不写回 DB). UI 提供"手动调整 stage"按钮给操作员, 手动调整时必填 reason, 留 audit log.
+2. **Milestone 不可变级别**: Milestone 任何字段都不允许直接修改. 发现错误只能新记一条 `corrected=true` 的 Milestone (例如 `code=container_picked_up_corrected`), 旧 Milestone 标 `corrected_at` + `corrected_by`. 不在 UI 隐藏旧记录, 时间线显示完整校正历史.
+3. **exception.auto_close 触发条件**: v0.5 只支持以下自动关闭 (实现成简单的 if-else 规则, 不做规则引擎):
+   - `schedule_changed` 收到新 BookingConfirmation 后自动 `auto_closed` (resolution 写"new confirmation accepted")
+   - `port_changed` / `carrier_changed` 同上
+   - `cutoff_approaching` SI/VGM 实际提交后自动 `auto_closed`
+   - `si_overdue` / `vgm_overdue` 实际提交后自动 `auto_closed`
+4. **不实现 rule 引擎**: v0.5 exception 自动生成用一张 `exception_rules` 配置表 (key+condition_sql) + 简单 if-else. 复杂规则引擎 (Drools / JSONLogic) v0.6 评估.
+5. **Task auto_close 行为**: 录入 Milestone 时, 所有 `Task.auto_close_on == milestone.code` 的 pending task 自动 mark `done` (completed_at=now, completed_by=actor). 这部分不需用户确认, 写 audit log.
+6. **Milestone.code 命名风格**: 统一用 `动词过去式_名词`, 例 `booking_request_sent` / `container_picked_up`. v0.5 不加 deprecated code 兼容, 真要废弃时整个 enum 改.

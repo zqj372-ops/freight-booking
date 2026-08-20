@@ -1,6 +1,6 @@
 # ADR-0002: BookingRequest 与 BookingConfirmation
 
-- 状态: DRAFT (待审)
+- 状态: **ACCEPTED** (2026-08-20 由 Autumn 拍板)
 - 日期: 2026-08-20
 - 适用范围: v0.5 core workflow reset
 
@@ -224,3 +224,13 @@ context = {
 - [ ] 邮件主题自动加 job_no 嵌入
 - [ ] 邮件 thread 关联 (Message-ID / In-Reply-To)
 - [ ] v0.4 SO 上传兼容 (SO → Document → BookingConfirmation)
+
+## 6. 拍板结论 (2026-08-20, Autumn ACCEPTED)
+
+1. **邮件主题格式**: 出站邮件主题统一带 `[job_no]` 前缀, 例 `[FB-20260820-0001] Booking Request | CNSHA–CAVAN | 1×40HQ`. 入站邮件先按 In-Reply-To / References 找 thread, 没有再正则解析主题前缀. 主题前缀作为 Shipment 候选匹配 fallback.
+2. **同一供应商改 ETD/改港/换船公司**: 必创建新 BookingRequest (递增 `request_version`), 旧 BookingRequest 不修改. 同一 Shipment 可同时存在多个进行中的 BookingRequest (例如同时发给 2 个代理比价).
+3. **同一供应商多个 BookingConfirmation**: 一个 Shipment 多个 BookingConfirmation 记录, `is_current=true` 标记当前有效. 接受新版时旧版 `is_current` 自动 false, `supersedes_id` 指向新版.
+4. **email_account_id 暂不细化**: v0.5 一个公司一个发件邮箱够用, `email_account_id` 字段保留但 v0.5 只 seed 一行 `default@company.com`. v0.6 再做多邮箱路由.
+5. **booking_request_id 可空**: BookingConfirmation.booking_request_id 允许 NULL, 场景: 收到的 SO 暂时无法判断属于哪次申请, 系统先匹配 Shipment, 人工后续关联.
+6. **BookingRequest 不可硬删**: cancelled 是终态, 保留 `cancellation_reason`. 不允许 re-activate, 新需求走新 BookingRequest.
+7. **context diff 必填**: 接受 BookingConfirmation 时, 若 OCR 字段与 BookingRequest.cargo_snapshot 有差异, 必须填 `context.diff` 标红字段, 人工 review 才能 accept.
