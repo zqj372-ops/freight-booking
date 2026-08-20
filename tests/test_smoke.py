@@ -1,4 +1,8 @@
-"""Smoke test - 不依赖 OCR, 跑通最小流程"""
+"""Smoke test - 不依赖 OCR, 跑通最小流程
+
+v0.5 阶段 1.5 初始化后, v0.4 API 写操作被 deprecated (返回 410 Gone).
+v0.4 写操作的 smoke test 跳过, v0.5 写操作见 test_v5_* 系列.
+"""
 
 from pathlib import Path
 
@@ -8,6 +12,9 @@ from httpx import ASGITransport, AsyncClient
 
 from app.database import init_db
 from app.main import app
+
+# v0.4 写操作已 deprecated (410 Gone), 这些 smoke test 跳过
+pytestmark = pytest.mark.skip(reason="v0.4 API deprecated (v0.5 阶段 1.5 初始化), use v0.5 tests")
 
 
 @pytest_asyncio.fixture(autouse=True)

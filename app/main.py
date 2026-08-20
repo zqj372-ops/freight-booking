@@ -16,6 +16,7 @@ from app.api.v1.router import api_router as v1_router
 from app.api.v2 import api_router as v2_router
 from app.config import settings
 from app.core.logging import setup_logging
+from app.core.middleware import APIStatsMiddleware, V1ReadOnlyMiddleware
 from app.database import init_db
 from app.utils.bootstrap import seed_default_templates, seed_default_organization
 
@@ -53,6 +54,13 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+# 中间件顺序 (FastAPI 倒序执行):
+#   1. V1ReadOnly (先于 V2ReadOnly, 因为 V1 在外)
+#   2. APIStats
+# add_middleware 是反序的: 最后 add 的最先执行
+app.add_middleware(APIStatsMiddleware)
+app.add_middleware(V1ReadOnlyMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
