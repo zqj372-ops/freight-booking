@@ -36,7 +36,7 @@ from app.services.next_action import (
     derive_dashboard,
     derive_document_checklist,
 )
-from app.services.numbering import generate_job_no
+from app.services.numbering import generate_job_no_with_retry as generate_job_no
 from app.services.triggers import TriggerEvent, fire_event
 
 router = APIRouter()
@@ -50,7 +50,6 @@ async def create_shipment(
 ) -> ShipmentRead:
     org = await get_default_organization(db)
     actor = Actor.from_request(request)
-    job_no = await generate_job_no(db, org)
 
     # 验证 customer_partner_id 存在
     if payload.customer_partner_id:
@@ -73,14 +72,31 @@ async def create_shipment(
         if not pp:
             raise HTTPException(status_code=400, detail="current_partner not found")
 
-    s = Shipment(
-        organization_id=org.id,
-        job_no=job_no,
-        **payload.model_dump(),
-    )
-    db.add(s)
-    await db.commit()
-    await db.refresh(s)
+    # P2 修复: 并发 commit 时可能撞 UNIQUE, 捕 IntegrityError 重试 (max 10 次)
+    from sqlalchemy.exc import IntegrityError
+    s: Shipment | None = None
+    for attempt in range(10):
+        job_no = await generate_job_no(db, org)
+        s = Shipment(
+            organization_id=org.id,
+            job_no=job_no,
+            **payload.model_dump(),
+        )
+        db.add(s)
+        try:
+            await db.commit()
+            await db.refresh(s)
+            break
+        except IntegrityError:
+            await db.rollback()
+            # 清掉 session 内残留对象, 重新 add
+            s = None
+            continue
+    if s is None:
+        raise HTTPException(
+            status_code=500,
+            detail="failed to generate unique job_no after 10 retries (high concurrency)",
+        )
 
     # 自动建 1 个 TBD Container
     container = Container(

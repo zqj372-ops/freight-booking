@@ -22,7 +22,7 @@ from app.schemas.booking_request import (
     BookingRequestSend,
     BookingRequestUpdate,
 )
-from app.services.numbering import build_cargo_snapshot, generate_booking_request_no
+from app.services.numbering import build_cargo_snapshot, generate_booking_request_no_with_retry as generate_booking_request_no
 
 router = APIRouter()
 
@@ -75,10 +75,10 @@ async def create_booking_request(
         request_version = old.request_version + 1
         # 旧版本不动, supersedes_id 留给 UI 反向查
 
-    # 编号
-    booking_request_no = await generate_booking_request_no(db, payload.shipment_id)
-
-    # cargo_snapshot
+    # P2 修复: 并发 commit 时可能撞 UNIQUE, 捕 IntegrityError 重试 (max 10 次)
+    from sqlalchemy.exc import IntegrityError
+    br: BookingRequest | None = None
+    booking_request_no: str = ""
     snapshot = build_cargo_snapshot(
         pol=payload.requested_pol,
         pod=payload.requested_pod,
@@ -97,28 +97,41 @@ async def create_booking_request(
         final_destination=s.final_destination,
     )
 
-    br = BookingRequest(
-        organization_id=org.id,
-        shipment_id=payload.shipment_id,
-        partner_id=payload.partner_id,
-        booking_request_no=booking_request_no,
-        request_version=request_version,
-        supersedes_id=payload.supersedes_id,
-        cargo_snapshot=snapshot,
-        requested_etd=payload.requested_etd,
-        requested_pol=payload.requested_pol,
-        requested_pod=payload.requested_pod,
-        requested_container_type=payload.requested_container_type,
-        requested_container_count=payload.requested_container_count,
-        carrier_preference=payload.carrier_preference,
-        status=BookingRequestStatus.DRAFT,
-        expected_response_by=payload.expected_response_by,
-        response_sla_hours=payload.response_sla_hours or p.response_sla_hours,
-        remark=payload.remark,
-    )
-    db.add(br)
-    await db.commit()
-    await db.refresh(br)
+    for attempt in range(10):
+        booking_request_no = await generate_booking_request_no(db, payload.shipment_id)
+        br = BookingRequest(
+            organization_id=org.id,
+            shipment_id=payload.shipment_id,
+            partner_id=payload.partner_id,
+            booking_request_no=booking_request_no,
+            request_version=request_version,
+            supersedes_id=payload.supersedes_id,
+            cargo_snapshot=snapshot,
+            requested_etd=payload.requested_etd,
+            requested_pol=payload.requested_pol,
+            requested_pod=payload.requested_pod,
+            requested_container_type=payload.requested_container_type,
+            requested_container_count=payload.requested_container_count,
+            carrier_preference=payload.carrier_preference,
+            status=BookingRequestStatus.DRAFT,
+            expected_response_by=payload.expected_response_by,
+            response_sla_hours=payload.response_sla_hours or p.response_sla_hours,
+            remark=payload.remark,
+        )
+        db.add(br)
+        try:
+            await db.commit()
+            await db.refresh(br)
+            break
+        except IntegrityError:
+            await db.rollback()
+            br = None
+            continue
+    if br is None:
+        raise HTTPException(
+            status_code=500,
+            detail="failed to generate unique booking_request_no after 10 retries",
+        )
 
     await write_audit_log(
         db,

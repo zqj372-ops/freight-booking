@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.organization_context import get_default_organization
@@ -290,14 +290,34 @@ async def migrate_sos(db: AsyncSession, organization_id: str) -> int:
 
         # 2. 如果 SO CONFIRMED → 建 BookingConfirmation
         if so.status == SOStatus.CONFIRMED:
-            # 找 v0.5 current_bc: 该 shipment 还没 BC, 所以这是第一个, version=1 is_current=True
+            # P1#8 修复: 同 shipment 多 confirmed SO 时, version 递增避免 UNIQUE 撞
+            # 先 flush 让前面插入的 BC 可见 (本次循环可能已经写了一个)
+            await db.flush()
+            max_v_stmt = select(func.max(BookingConfirmation.version)).where(
+                BookingConfirmation.shipment_id == shipment_id,
+            )
+            max_v = (await db.execute(max_v_stmt)).scalar() or 0
+            new_version = max_v + 1
+            # 只有 latest 一个 is_current=True, 旧的切 false (避免双 current)
+            if new_version > 1:
+                old_currents = (await db.execute(
+                    select(BookingConfirmation).where(
+                        BookingConfirmation.shipment_id == shipment_id,
+                        BookingConfirmation.is_current == True,  # noqa: E712
+                    )
+                )).scalars().all()
+                for o in old_currents:
+                    o.is_current = False
+                    if o.status == BookingConfirmationStatus.ACCEPTED:
+                        o.status = BookingConfirmationStatus.SUPERSEDED
+
             bc = BookingConfirmation(
                 id=_new_id(),
                 organization_id=organization_id,
                 shipment_id=shipment_id,
                 booking_request_id=None,  # v0.4 没有 BR
                 document_id=doc.id,
-                version=1,
+                version=new_version,
                 is_current=True,
                 status=BookingConfirmationStatus.ACCEPTED,
                 so_no=so.so_number,
@@ -317,7 +337,7 @@ async def migrate_sos(db: AsyncSession, organization_id: str) -> int:
             db.add(bc)
             await _record_map(
                 db, organization_id, "so", so.id, "booking_confirmation", bc.id,
-                {"version": 1, "is_current": True},
+                {"version": new_version, "is_current": True},
             )
         count += 1
     await db.flush()

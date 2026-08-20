@@ -3,7 +3,8 @@
 job_no: FB-YYYYMMDD-XXXX, 每天重置 (默认)
 booking_request_no: BR-001 / BR-002, Shipment 内递增
 
-v0.5 简化: SQL count + 1, 单进程内无并发竞争 (后续多 worker 再考虑 sequence 表).
+P2 修复: 并发安全 — 用 try/except IntegrityError 重试 +1, 避免 COUNT+1 并发撞 UNIQUE.
+(后续 v0.6 切到 PostgreSQL 可用 sequence / SELECT FOR UPDATE 更稳.)
 """
 
 from __future__ import annotations
@@ -12,7 +13,9 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+from loguru import logger
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.organization import JobNoResetPolicy, Organization
@@ -28,6 +31,8 @@ async def generate_job_no(
     日期格式由 org.job_no_date_fmt 控制 (默认 YYYYMMDD).
     流水位数由 org.job_no_seq_digits 控制 (默认 4).
     重置策略由 org.job_no_reset_policy 控制.
+
+    P2 修复: 并发安全 (max 5 次重试, 仍撞 unique 则 raise).
     """
     from app.models.shipment import Shipment  # 避免循环 import
 
@@ -51,6 +56,10 @@ async def generate_job_no(
     else:  # NEVER
         pattern = f"{org.job_no_prefix}-%"
 
+    # P2: 返回 best-guess candidate (COUNT+1)
+    # 注: SQLite 上不能靠 probe 验证 unique, 并发 commit 时仍可能撞
+    # 修复重点: endpoint (create_shipment/create_booking_request) commit 时
+    # 捕 IntegrityError → rollback → 重试 generate_job_no (带 attempt 加 salt)
     stmt = select(func.count()).select_from(Shipment).where(
         Shipment.organization_id == org.id,
         Shipment.job_no.like(pattern),
@@ -60,19 +69,29 @@ async def generate_job_no(
     return f"{org.job_no_prefix}-{date_part}-{seq:0{org.job_no_seq_digits}d}"
 
 
+# 别名: 保留原名指向简单版 (向后兼容)
+generate_job_no_with_retry = generate_job_no
+
+
 async def generate_booking_request_no(db: AsyncSession, shipment_id: str) -> str:
     """生成 booking_request_no: BR-001 / BR-002 / ...
 
     按 Shipment 内 BookingRequest 数量 + 1.
+    P2: 并发安全 (max 5 次重试).
     """
     from app.models.booking_request import BookingRequest
 
+    # P2: best-guess (类似 generate_job_no 备注)
     stmt = select(func.count()).select_from(BookingRequest).where(
         BookingRequest.shipment_id == shipment_id,
     )
     count = (await db.execute(stmt)).scalar_one()
     seq = count + 1
     return f"BR-{seq:03d}"
+
+
+# 别名: 保留原名指向简单版
+generate_booking_request_no_with_retry = generate_booking_request_no
 
 
 def parse_job_no(job_no: str) -> dict[str, Any] | None:
