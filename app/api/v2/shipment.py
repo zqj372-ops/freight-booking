@@ -18,13 +18,23 @@ from app.models.partner import Partner
 from app.models.shipment import Shipment, ShipmentStage
 from app.models.task import Task
 from app.schemas.shipment import (
+    DashboardStats,
+    DashboardTaskItem,
+    DocumentChecklist,
+    DocumentChecklistItem,
     ShipmentCreate,
     ShipmentEventsUpdate,
+    ShipmentListItem,
     ShipmentListQuery,
     ShipmentRead,
     ShipmentStageChange,
     ShipmentStatusUpdate,
     ShipmentUpdate,
+)
+from app.services.next_action import (
+    build_shipment_list_items,
+    derive_dashboard,
+    derive_document_checklist,
 )
 from app.services.numbering import generate_job_no
 from app.services.triggers import TriggerEvent, fire_event
@@ -94,7 +104,7 @@ async def create_shipment(
     return ShipmentRead.model_validate(s)
 
 
-@router.get("/", response_model=list[ShipmentRead])
+@router.get("/", response_model=list[ShipmentListItem])
 async def list_shipments(
     stage: str | None = Query(None),
     customer_partner_id: str | None = None,
@@ -131,7 +141,9 @@ async def list_shipments(
         )
     stmt = stmt.order_by(Shipment.created_at.desc()).limit(limit).offset(offset)
     rows = (await db.execute(stmt)).scalars().all()
-    return [ShipmentRead.model_validate(r) for r in rows]
+    # v0.5 1.5.4: 主列表 12 字段 (从 join 推导 business_phase/next_action/dashboard)
+    items = await build_shipment_list_items(db, org.id, rows)
+    return [ShipmentListItem(**vars(i)) for i in items]
 
 
 @router.get("/{shipment_id}", response_model=ShipmentRead)
@@ -182,7 +194,17 @@ async def update_shipment(
     await db.refresh(s)
 
     after = {k: getattr(s, k) for k in payload.model_fields_set}
-    field_changes = {k: {"old": before.get(k), "new": after.get(k)} for k in payload.model_fields_set}
+    field_changes = {}
+    for k in payload.model_fields_set:
+        old_v = before.get(k)
+        new_v = after.get(k)
+        # JSON serialize datetime/date
+        if hasattr(old_v, "isoformat"):
+            old_v = old_v.isoformat()
+        if hasattr(new_v, "isoformat"):
+            new_v = new_v.isoformat()
+        if old_v != new_v:
+            field_changes[k] = {"old": old_v, "new": new_v}
     await write_audit_log(
         db,
         organization_id=s.organization_id,
@@ -462,3 +484,34 @@ async def update_trigger_events(
         )
         await db.commit()
     return ShipmentRead.model_validate(s)
+
+
+# v0.5 1.5.4: 文件齐套度 (业务详情 "文件齐套" 列)
+@router.get("/{shipment_id}/document-checklist", response_model=DocumentChecklist)
+async def get_document_checklist(
+    shipment_id: str,
+    db: AsyncSession = Depends(db_session),
+) -> DocumentChecklist:
+    """8 类文件齐套度 (SO/SI/VGM/Customs/BL draft/BL final/EMF/AN/Load Plan)
+
+    返回: items (8 类 + status) + total_completion 比例
+    """
+    s = (await db.execute(
+        select(Shipment).where(Shipment.id == shipment_id)
+    )).scalar_one_or_none()
+    if not s:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="shipment not found")
+    cl = await derive_document_checklist(db, s.organization_id, shipment_id)
+    return DocumentChecklist(
+        shipment_id=cl.shipment_id,
+        items=[DocumentChecklistItem(
+            code=i.code, label=i.label, required=i.required, status=i.status.value,
+            count=i.count, expected=i.expected,
+            latest_doc_id=i.latest_doc_id,
+            latest_received_at=i.latest_received_at.isoformat() if i.latest_received_at else None,
+        ) for i in cl.items],
+        total_required=cl.total_required,
+        total_completed=cl.total_completed,
+        completion=cl.completion,
+    )

@@ -201,3 +201,67 @@ class ShipmentEventsUpdate(BaseModel):
     last_updated_at: datetime | None = None
 
     reason: str | None = Field(None, min_length=5)
+
+
+# v0.5 1.5.4: 主列表 12 字段 + dashboard + document-checklist
+class ShipmentListItem(BaseModel):
+    """主列表 12 字段 (1.5.4 final)"""
+
+    id: str
+    job_no: str
+    route_summary: str  # CNSZX → CAVAN 1×40HQ
+    carrier_partner: str  # COSCO 华南一级代理
+    vessel_voyage: str  # COSCO SHIPPING... 082E
+    current_etd: str | None
+    current_eta: str | None
+    business_phase: int
+    business_phase_label: str
+    business_phase_color: str
+    next_action: str
+    next_due_at: str | None
+    countdown_hours: float | None
+    next_action_priority: str  # urgent/important/normal/waiting_external/none
+    operator_user_name: str | None
+    exception_label: str  # "一般/重要/紧急/—"
+    progress: float
+    last_updated_at: str | None
+
+
+class DashboardTaskItem(BaseModel):
+    task_id: str
+    title: str
+    due_at: str | None
+    job_no: str | None
+    pol: str | None
+    pod: str | None
+    shipment_id: str
+
+
+class DashboardStats(BaseModel):
+    """4 卡片 (主列表顶部)"""
+
+    overdue_tasks: int
+    due_today: int
+    awaiting_so: int
+    arriving_within_7d: int
+    overdue_tasks_top: list[DashboardTaskItem] = []
+    due_today_top: list[DashboardTaskItem] = []
+
+
+class DocumentChecklistItem(BaseModel):
+    code: str
+    label: str
+    required: bool
+    status: str  # completed/partial/missing/not_applicable
+    count: int
+    expected: int
+    latest_doc_id: str | None
+    latest_received_at: str | None
+
+
+class DocumentChecklist(BaseModel):
+    shipment_id: str
+    items: list[DocumentChecklistItem]
+    total_required: int
+    total_completed: int
+    completion: float
