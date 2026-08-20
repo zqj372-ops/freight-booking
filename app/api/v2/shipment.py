@@ -444,13 +444,40 @@ async def update_trigger_events(
             tasks_created.extend(new_tasks)
 
     # 其他 6 个字段 (booking_request_sent_at / cy_open_at / si_cutoff_at / vgm_cutoff_at /
-    # cy_cutoff_at / last_updated_at): 仅存值, 不 fire trigger
+    # cy_cutoff_at / last_updated_at): 存值, 关键字段自动建 milestone 让 phase 推进
+    from app.models.milestone import Milestone, MilestoneCode, MilestoneSource
+    _FIELD_TO_MILESTONE = {
+        "booking_request_sent_at": MilestoneCode.BOOKING_REQUEST_SENT,
+    }
     for field_name in [
         "booking_request_sent_at", "cy_open_at", "si_cutoff_at",
         "vgm_cutoff_at", "cy_cutoff_at", "last_updated_at",
     ]:
         if field_name in payload.model_fields_set:
-            setattr(s, field_name, getattr(payload, field_name))
+            new_val = getattr(payload, field_name)
+            if new_val is not None:
+                setattr(s, field_name, new_val)
+                # 关键里程碑字段自动建 milestone
+                if field_name in _FIELD_TO_MILESTONE:
+                    mc = _FIELD_TO_MILESTONE[field_name]
+                    # 避免重复 (幂等)
+                    existing = (await db.execute(
+                        select(Milestone).where(
+                            Milestone.shipment_id == s.id,
+                            Milestone.code == mc,
+                        )
+                    )).scalar_one_or_none()
+                    if not existing:
+                        m = Milestone(
+                            id=str(__import__("uuid").uuid4()),
+                            organization_id=s.organization_id,
+                            shipment_id=s.id,
+                            code=mc,
+                            occurred_at=new_val if isinstance(new_val, datetime) else datetime.now(timezone.utc),
+                            recorded_at=datetime.now(timezone.utc),
+                            source=MilestoneSource.MANUAL,
+                        )
+                        db.add(m)
 
     now = datetime.now(timezone.utc)
     s.last_updated_at = now

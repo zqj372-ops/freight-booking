@@ -402,9 +402,10 @@ async def derive_document_checklist(
     total_completed = 0
 
     for code, label, required, expected in items_spec:
-        # 状态: milestone 优先
+        # 状态: milestone 优先, doc_type 兜底
         if code == "so":
-            count = 1 if has_so else 0
+            # SO 算 1: 已有 is_current BC (confirmed) OR 任何 doc_type=SO 的 document
+            count = 1 if (has_so or len(docs_by_kind.get("so", [])) > 0) else 0
         elif code == "si":
             count = 1 if MilestoneCode.SI_SUBMITTED in codes_submitted else 0
         elif code == "vgm":

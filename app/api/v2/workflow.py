@@ -97,6 +97,27 @@ async def create_milestone(
         milestone_code=MilestoneCode(payload.code),
     )
 
+    # 关键 milestone 触发 SLA trigger (e.g. departed → get_onboard_bl / get_emf)
+    _MILESTONE_TO_TRIGGER = {
+        "departed": "departed",
+        "container_picked_up": None,  # 暂无 trigger
+        "container_loaded": None,
+        "si_submitted": None,  # si_sent 触发是 si_info_ready_at
+        "vgm_submitted": None,
+        "customs_cleared": "customs_released",
+        "arrived_at_pod": None,
+    }
+    from app.services.triggers import fire_event, TriggerEvent
+    trigger_name = _MILESTONE_TO_TRIGGER.get(payload.code)
+    if trigger_name:
+        try:
+            await fire_event(
+                db, event=TriggerEvent(trigger_name),
+                shipment=s, occurred_at=payload.occurred_at,
+            )
+        except (ValueError, KeyError):
+            pass  # 未注册的 trigger 跳过
+
     await db.commit()
     await db.refresh(ms)
 
