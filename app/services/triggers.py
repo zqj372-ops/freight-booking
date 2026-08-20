@@ -351,12 +351,36 @@ async def fire_event(
 ) -> list[Task]:
     """主入口: fire 一个 trigger 事件, 调用 handler 建 task.
 
-    返回创建的 task 列表. 重复 fire 同 event 不会去重 (调用方负责), v0.5 简化.
+    P2 修复: 幂等去重 — 同 shipment + 同 event 如果有未关闭 (PENDING/IN_PROGRESS) 的 task
+    已 fire 过, 跳过. 标记方式: task.context["trigger_event"] = event.value.
+
+    返回创建的 task 列表. 如果因幂等跳过, 返 [].
     """
     handler = TRIGGER_REGISTRY.get(event)
     if not handler:
         logger.warning("trigger event {} has no handler", event.value)
         return []
+
+    # 幂等检查: 同 shipment + event 是否已 fire 过 (有未关闭 task)
+    # 注: SQLite 不支持 .astext, 在 Python 端过滤 (一般 shipment 同时 active task 不多)
+    from sqlalchemy import select
+    candidate_tasks = (await db.execute(
+        select(Task).where(
+            Task.shipment_id == shipment.id,
+            Task.status.in_([TaskStatus.PENDING, TaskStatus.IN_PROGRESS]),
+        )
+    )).scalars().all()
+    existing = sum(
+        1 for t in candidate_tasks
+        if (t.context or {}).get("trigger_event") == event.value
+    )
+    if existing > 0:
+        logger.info(
+            "trigger {} already fired for shipment {} ({} pending task(s)), skip",
+            event.value, shipment.id, existing,
+        )
+        return []
+
     ctx = TriggerContext(
         shipment=shipment,
         event=event,
@@ -368,7 +392,12 @@ async def fire_event(
     except Exception as e:
         logger.error("trigger handler {} failed: {}", event.value, e)
         return []
+    # 注入 trigger_event 到 context, 方便下次 dedup
     for t in tasks:
+        if t.context is None:
+            t.context = {}
+        # 不覆盖 handler 已写的 context, 只补 trigger_event
+        t.context.setdefault("trigger_event", event.value)
         db.add(t)
     if tasks:
         await db.flush()

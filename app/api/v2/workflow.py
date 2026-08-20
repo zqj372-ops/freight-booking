@@ -22,7 +22,7 @@ from app.models.booking_request import BookingRequest, BookingRequestStatus
 from app.models.booking_confirmation import BookingConfirmation
 from app.models.milestone import Milestone
 from app.models.operational_exception import OperationalException
-from app.models.shipment import Shipment
+from app.models.shipment import Shipment, ShipmentStage
 from app.models.task import Task
 from app.schemas.milestone import (
     MilestoneCreate,
@@ -69,6 +69,12 @@ async def create_milestone(
     )).scalar_one_or_none()
     if not s:
         raise HTTPException(status_code=404, detail="shipment not found")
+    # P1#7 修复: cancelled 终态, 不允许加业务事实
+    if s.stage == ShipmentStage.CANCELLED:
+        raise HTTPException(
+            status_code=400,
+            detail="cancelled shipment is terminal, cannot add milestones (create new Shipment instead)",
+        )
 
     now = datetime.now(timezone.utc)
     ms = Milestone(
@@ -231,6 +237,12 @@ async def create_task(
     )).scalar_one_or_none()
     if not s:
         raise HTTPException(status_code=404, detail="shipment not found")
+    # P1#7 修复: cancelled 终态, 不允许加 task
+    if s.stage == ShipmentStage.CANCELLED:
+        raise HTTPException(
+            status_code=400,
+            detail="cancelled shipment is terminal, cannot add tasks (create new Shipment instead)",
+        )
 
     t = Task(
         organization_id=org.id,
@@ -345,6 +357,12 @@ async def create_exception(
     )).scalar_one_or_none()
     if not s:
         raise HTTPException(status_code=404, detail="shipment not found")
+    # P1#7 修复: cancelled 终态, 不允许加 exception
+    if s.stage == ShipmentStage.CANCELLED:
+        raise HTTPException(
+            status_code=400,
+            detail="cancelled shipment is terminal, cannot add exceptions (create new Shipment instead)",
+        )
 
     from app.models.operational_exception import ExceptionDetectedBy, ExceptionSeverity
     ex = OperationalException(
