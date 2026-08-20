@@ -235,8 +235,69 @@ class Shipment(Base, OrganizationScopedMixin, TimestampMixin):
         JSON, nullable=True, doc="报价快照 JSON, v0.5 不用",
     )
 
-    # ===== 备注 =====
-    remark: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ===== 备注 (5 类拆分, 替代原单 remark) =====
+    remark: Mapped[str | None] = mapped_column(
+        Text, nullable=True,
+        doc="通用备注 (兼容 v0.5 1.2, 阶段 1.5.2 后续可废弃)",
+    )
+    booking_remark: Mapped[str | None] = mapped_column(
+        Text, nullable=True,
+        doc="订舱/操作备注 (主列表可见)",
+    )
+    bl_remark: Mapped[str | None] = mapped_column(
+        Text, nullable=True,
+        doc="提单修改/特殊备注",
+    )
+    customs_remark: Mapped[str | None] = mapped_column(
+        Text, nullable=True,
+        doc="报关/查验备注",
+    )
+    pod_remark: Mapped[str | None] = mapped_column(
+        Text, nullable=True,
+        doc="目的港/清关备注",
+    )
+    finance_remark: Mapped[str | None] = mapped_column(
+        Text, nullable=True,
+        doc="财务备注",
+    )
+
+    # ===== 6 个 Y/N → enum 状态字段 (v0.5 1.5.2) =====
+    customs_status: Mapped[str | None] = mapped_column(
+        String(32), nullable=True,
+        doc="CustomsStatus: pending/submitting/released/rejected/inspecting",
+    )
+    inspection_status: Mapped[str | None] = mapped_column(
+        String(32), nullable=True,
+        doc="InspectionStatus: not_received/received/handling/completed",
+    )
+    rolled_status: Mapped[str | None] = mapped_column(
+        String(32), nullable=True,
+        doc="RolledStatus: not_happened/suspected/confirmed/reallocated/closed",
+    )
+    payment_request_status: Mapped[str | None] = mapped_column(
+        String(32), nullable=True,
+        doc="PaymentRequestStatus: not_requested/requested/approved/paid",
+    )
+    payment_proof_status: Mapped[str | None] = mapped_column(
+        String(32), nullable=True,
+        doc="PaymentProofStatus: not_provided/provided/confirmed",
+    )
+    empty_return_status: Mapped[str | None] = mapped_column(
+        String(32), nullable=True,
+        doc="EmptyReturnStatus: not_scheduled/scheduled/returned/overdue/abnormal",
+    )
+    bl_process_status: Mapped[str | None] = mapped_column(
+        String(32), nullable=True,
+        doc="BlProcessStatus: not_started/draft_received/revising/confirmed/abnormal",
+    )
+    # 状态时间戳
+    customs_released_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    customs_released_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    inspection_received_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
 
     __table_args__ = (
         # 同组织下 job_no 唯一

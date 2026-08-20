@@ -21,6 +21,7 @@ from app.schemas.shipment import (
     ShipmentListQuery,
     ShipmentRead,
     ShipmentStageChange,
+    ShipmentStatusUpdate,
     ShipmentUpdate,
 )
 from app.services.numbering import generate_job_no
@@ -229,6 +230,81 @@ async def change_stage(
         reason=payload.reason,
     )
     await db.commit()
+    return ShipmentRead.model_validate(s)
+
+
+# v0.5 1.5.2: 状态变更 (7 个 enum + 5 类备注)
+@router.patch("/{shipment_id}/status", response_model=ShipmentRead)
+async def update_status(
+    shipment_id: str,
+    payload: ShipmentStatusUpdate,
+    request: Request,
+    db: AsyncSession = Depends(db_session),
+) -> ShipmentRead:
+    """v0.5 1.5.2: 状态变更 (customs/inspection/rolled/payment_request/payment_proof/empty_return/bl_process 任一)
+
+    业务侧每次状态变化自动:
+    - 写 audit log (字段变化 diff + reason)
+    - 更新 last_updated_at
+    - 触发下一节点任务 (v0.5 1.5.3 实现)
+    """
+    s = (await db.execute(
+        select(Shipment).where(Shipment.id == shipment_id)
+    )).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="shipment not found")
+    if s.stage == ShipmentStage.CANCELLED:
+        raise HTTPException(
+            status_code=400,
+            detail="cancelled shipment is terminal, cannot update status",
+        )
+    actor = Actor.from_request(request)
+
+    before = {k: getattr(s, k) for k in payload.model_fields_set if k != "reason"}
+
+    # 7 个 status 字段
+    now = datetime.now(timezone.utc)
+    for field_name in [
+        "customs_status", "inspection_status", "rolled_status",
+        "payment_request_status", "payment_proof_status",
+        "empty_return_status", "bl_process_status",
+    ]:
+        if field_name in payload.model_fields_set:
+            new_val = getattr(payload, field_name)
+            setattr(s, field_name, new_val)
+            # 联动时间戳
+            if field_name == "customs_status" and new_val == "released":
+                s.customs_released_at = now
+                s.customs_released_by = actor.actor_user_name or "anonymous"
+            elif field_name == "inspection_status" and new_val == "received":
+                s.inspection_received_at = now
+
+    # 5 类备注
+    for field_name in [
+        "booking_remark", "bl_remark", "customs_remark",
+        "pod_remark", "finance_remark",
+    ]:
+        if field_name in payload.model_fields_set:
+            setattr(s, field_name, getattr(payload, field_name))
+
+    s.last_updated_at = now
+    await db.commit()
+    await db.refresh(s)
+
+    after = {k: getattr(s, k) for k in payload.model_fields_set if k != "reason"}
+    field_changes = {k: {"old": before.get(k), "new": after.get(k)} for k in after if before.get(k) != after.get(k)}
+    if field_changes:
+        await write_audit_log(
+            db,
+            organization_id=s.organization_id,
+            entity_type="shipment",
+            entity_id=s.id,
+            action=AuditAction.UPDATE,
+            actor=actor,
+            field_changes=field_changes,
+            reason=payload.reason,
+        )
+        await db.commit()
     return ShipmentRead.model_validate(s)
 
 

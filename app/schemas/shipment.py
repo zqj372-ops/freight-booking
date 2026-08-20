@@ -101,6 +101,23 @@ class ShipmentRead(ShipmentBase):
     cy_cutoff_at: datetime | None
     empty_return_due_at: datetime | None
     last_updated_at: datetime | None
+    # v0.5 1.5.2: 5 类备注
+    booking_remark: str | None
+    bl_remark: str | None
+    customs_remark: str | None
+    pod_remark: str | None
+    finance_remark: str | None
+    # v0.5 1.5.2: 7 个状态字段
+    customs_status: str | None
+    inspection_status: str | None
+    rolled_status: str | None
+    payment_request_status: str | None
+    payment_proof_status: str | None
+    empty_return_status: str | None
+    bl_process_status: str | None
+    customs_released_at: datetime | None
+    customs_released_by: str | None
+    inspection_received_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -121,3 +138,38 @@ class ShipmentStageChange(BaseModel):
 
     stage: ShipmentStageLiteral
     reason: str = Field(..., min_length=5, description="调整原因, 必填 >= 5 字符")
+
+
+# v0.5 1.5.2: 7 个状态 enum + 5 类备注
+CustomsStatusLiteral = Literal["pending", "submitting", "released", "rejected", "inspecting"]
+InspectionStatusLiteral = Literal["not_received", "received", "handling", "completed"]
+RolledStatusLiteral = Literal["not_happened", "suspected", "confirmed", "reallocated", "closed"]
+PaymentRequestStatusLiteral = Literal["not_requested", "requested", "approved", "paid"]
+PaymentProofStatusLiteral = Literal["not_provided", "provided", "confirmed"]
+EmptyReturnStatusLiteral = Literal["not_scheduled", "scheduled", "returned", "overdue", "abnormal"]
+BlProcessStatusLiteral = Literal["not_started", "draft_received", "revising", "confirmed", "abnormal"]
+
+
+class ShipmentStatusUpdate(BaseModel):
+    """v0.5 1.5.2: 状态变更 (customs/inspection/rolled/payment_request/payment_proof/empty_return/bl_process 任一)
+
+    request body 只传需要改的字段, 没传的不变.
+    """
+
+    customs_status: CustomsStatusLiteral | None = None
+    inspection_status: InspectionStatusLiteral | None = None
+    rolled_status: RolledStatusLiteral | None = None
+    payment_request_status: PaymentRequestStatusLiteral | None = None
+    payment_proof_status: PaymentProofStatusLiteral | None = None
+    empty_return_status: EmptyReturnStatusLiteral | None = None
+    bl_process_status: BlProcessStatusLiteral | None = None
+
+    # 5 类备注
+    booking_remark: str | None = None
+    bl_remark: str | None = None
+    customs_remark: str | None = None
+    pod_remark: str | None = None
+    finance_remark: str | None = None
+
+    # 可选 reason (留 audit)
+    reason: str | None = Field(None, min_length=5)
