@@ -25,6 +25,14 @@ from app.models.booking_confirmation import (  # noqa: F401
     BookingConfirmation, BookingConfirmationStatus, BookingConfirmationReviewStatus,
 )
 from app.models.container import Container, ContainerStatus  # noqa: F401
+from app.models.document import (  # noqa: F401
+    Document, DocumentExtraction,
+    DocumentSource, DocumentType, OcrStatus, ParseStatus, ExtractionMethod,
+)
+from app.models.email import (  # noqa: F401
+    EmailThread, EmailMessage,
+    EmailThreadStatus, EmailDirection, EmailMessageStatus, EmailSource,
+)
 
 __all__ = [
     # v0.4
@@ -42,4 +50,8 @@ __all__ = [
     "BookingRequest", "BookingRequestStatus",
     "BookingConfirmation", "BookingConfirmationStatus", "BookingConfirmationReviewStatus",
     "Container", "ContainerStatus",
+    "Document", "DocumentExtraction",
+    "DocumentSource", "DocumentType", "OcrStatus", "ParseStatus", "ExtractionMethod",
+    "EmailThread", "EmailMessage",
+    "EmailThreadStatus", "EmailDirection", "EmailMessageStatus", "EmailSource",
 ]

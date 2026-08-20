@@ -10,6 +10,8 @@ from app.api.v2 import (
     booking_request,
     booking_confirmation,
     container,
+    document,
+    email_thread,
 )
 
 api_router = APIRouter()
@@ -20,3 +22,5 @@ api_router.include_router(shipment.router, prefix="/shipments", tags=["业务单
 api_router.include_router(booking_request.router, prefix="/booking-requests", tags=["订舱申请"])
 api_router.include_router(booking_confirmation.router, prefix="/booking-confirmations", tags=["订舱确认"])
 api_router.include_router(container.router, prefix="/containers", tags=["柜"])
+api_router.include_router(document.router, prefix="/documents", tags=["文件"])
+api_router.include_router(email_thread.router, prefix="/emails", tags=["邮件"])
