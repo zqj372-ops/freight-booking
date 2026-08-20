@@ -1,13 +1,12 @@
 import { NavLink, Outlet } from "react-router-dom";
 import {
   LayoutDashboard,
-  Inbox,
   Package,
-  Map,
-  Receipt,
+  ListTodo,
+  Inbox,
+  AlertTriangle,
   Users,
-  Mail,
-  History,
+  Receipt,
   Settings as SettingsIcon,
   Anchor,
 } from "lucide-react";
@@ -16,13 +15,12 @@ import { Badge } from "@/components/ui/badge";
 
 const nav = [
   { to: "/", icon: LayoutDashboard, label: "工作台" },
-  { to: "/so", icon: Inbox, label: "SO 收件箱" },
-  { to: "/bookings", icon: Package, label: "订舱管理" },
-  { to: "/tracking", icon: Map, label: "运单跟踪" },
-  { to: "/bills", icon: Receipt, label: "账单中心" },
-  { to: "/agents", icon: Users, label: "订舱代理" },
-  { to: "/templates", icon: Mail, label: "邮件模板" },
-  { to: "/logs", icon: History, label: "发送历史" },
+  { to: "/shipments", icon: Package, label: "业务单" },
+  { to: "/tasks", icon: ListTodo, label: "任务中心", v06: true },
+  { to: "/so", icon: Inbox, label: "SO 收件箱", legacy: true },
+  { to: "/exceptions", icon: AlertTriangle, label: "异常中心", v06: true },
+  { to: "/partners", icon: Users, label: "合作方" },
+  { to: "/bills", icon: Receipt, label: "账单", legacy: true },
   { to: "/settings", icon: SettingsIcon, label: "系统设置" },
 ];
 
@@ -34,7 +32,7 @@ export function Layout() {
         <div className="h-14 flex items-center gap-2 px-4 border-b">
           <Anchor className="h-5 w-5 text-sky-600" />
           <span className="font-semibold text-slate-900">二掌柜订舱</span>
-          <Badge variant="secondary" className="ml-auto text-[10px]">v0.3</Badge>
+          <Badge variant="secondary" className="ml-auto text-[10px]">v0.5</Badge>
         </div>
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
           {nav.map((item) => (
@@ -52,12 +50,18 @@ export function Layout() {
               }
             >
               <item.icon className="h-4 w-4" />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.legacy && (
+                <span className="text-[10px] text-slate-400">v0.4</span>
+              )}
+              {item.v06 && (
+                <span className="text-[10px] text-orange-400">v0.6</span>
+              )}
             </NavLink>
           ))}
         </nav>
         <div className="p-3 text-[10px] text-slate-400 border-t">
-          FreightFlow AI © 2026
+          FreightFlow AI v0.5 © 2026
         </div>
       </aside>
 

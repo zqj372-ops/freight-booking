@@ -1,6 +1,8 @@
+/// <reference types="vite/client" />
 import axios, { type AxiosInstance } from "axios";
 
-const baseURL = import.meta.env.VITE_API_BASE || "/api/v1";
+// v0.5: 切到 v2 API (v0.4 deprecated, 仅 GET 兼容)
+const baseURL = import.meta.env.VITE_API_BASE || "/api/v2";
 
 export const api: AxiosInstance = axios.create({
   baseURL,
@@ -315,4 +317,242 @@ export const apiClient = {
 
   // Health
   health: () => fetch("/health").then((r) => r.json()) as Promise<{ status: string; version: string }>,
+};
+
+// ===== v0.5 Types =====
+
+export type BusinessPhase = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+
+export interface ShipmentListItem {
+  id: string;
+  job_no: string;
+  route_summary: string;
+  carrier_partner: string;
+  vessel_voyage: string;
+  current_etd: string | null;
+  current_eta: string | null;
+  business_phase: BusinessPhase;
+  business_phase_label: string;
+  business_phase_color: string;
+  next_action: string;
+  next_due_at: string | null;
+  countdown_hours: number | null;
+  next_action_priority: string;
+  operator_user_name: string | null;
+  exception_label: string;
+  progress: number;
+  last_updated_at: string | null;
+}
+
+export interface ShipmentDetail {
+  id: string;
+  job_no: string;
+  legacy_job_no: string | null;
+  customer_name: string | null;
+  customer_ref: string | null;
+  pol: string;
+  pod: string;
+  final_destination: string | null;
+  target_etd: string;
+  etd: string | null;
+  eta: string | null;
+  stage: string;
+  container_count: number;
+  current_carrier: string | null;
+  current_partner_id: string | null;
+  commodity: string;
+  weight_kg: number | null;
+  volume_cbm: number | null;
+  booking_remark: string | null;
+  customs_status: string | null;
+  inspection_status: string | null;
+  rolled_status: string | null;
+  payment_request_status: string | null;
+  payment_proof_status: string | null;
+  empty_return_status: string | null;
+  bl_process_status: string | null;
+  so_no: string | null;
+  bl_no: string | null;
+  carrier_booking_no: string | null;
+  so_received_at: string | null;
+  sealed_at: string | null;
+  cy_cutoff_at: string | null;
+  empty_return_due_at: string | null;
+  si_cutoff_at: string | null;
+  vgm_cutoff_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BusinessPhaseInfo {
+  shipment_id: string;
+  phase: BusinessPhase;
+  phase_label: string;
+  color: string;
+  progress: number;
+  milestone_count: number;
+  has_open_exception: boolean;
+  next_due_at: string | null;
+  next_task_title: string | null;
+}
+
+export interface DashboardStats {
+  overdue_tasks: number;
+  due_today: number;
+  awaiting_so: number;
+  arriving_within_7d: number;
+  overdue_tasks_top: DashboardTaskItem[];
+  due_today_top: DashboardTaskItem[];
+}
+
+export interface DashboardTaskItem {
+  task_id: string;
+  title: string;
+  due_at: string | null;
+  job_no: string | null;
+  pol: string | null;
+  pod: string | null;
+  shipment_id: string;
+}
+
+export interface DocumentChecklistItem {
+  code: string;
+  label: string;
+  required: boolean;
+  status: string;
+  count: number;
+  expected: number;
+  latest_doc_id: string | null;
+  latest_received_at: string | null;
+}
+
+export interface DocumentChecklist {
+  shipment_id: string;
+  items: DocumentChecklistItem[];
+  total_required: number;
+  total_completed: number;
+  completion: number;
+}
+
+export interface Partner {
+  id: string;
+  partner_type: string;
+  name: string;
+  short_code: string | null;
+  primary_email: string | null;
+  cc_emails: string[];
+  contact_person: string | null;
+  contact_phone: string | null;
+  preferred_routes: string[];
+  remark: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BookingConfirmation {
+  id: string;
+  shipment_id: string;
+  document_id: string | null;
+  carrier: string | null;
+  so_no: string | null;
+  bl_no: string | null;
+  vessel_name: string | null;
+  voyage_no: string | null;
+  pol: string | null;
+  pod: string | null;
+  etd: string | null;
+  eta: string | null;
+  si_cutoff_at: string | null;
+  container_type: string | null;
+  container_count: number | null;
+  version: number;
+  is_current: boolean;
+  status: string;
+  accepted_at: string | null;
+}
+
+export interface Container {
+  id: string;
+  shipment_id: string;
+  container_no: string | null;
+  seal_no: string | null;
+  container_type: string;
+  status: string;
+  pickup_time: string | null;
+  loaded_time: string | null;
+  return_time: string | null;
+}
+
+export interface Milestone {
+  id: string;
+  shipment_id: string;
+  code: string;
+  occurred_at: string;
+  recorded_at: string;
+  source: string;
+  vessel_name: string | null;
+  voyage_no: string | null;
+  container_no: string | null;
+  location: string | null;
+  remark: string | null;
+}
+
+export interface Task {
+  id: string;
+  shipment_id: string;
+  code: string;
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  assignee_user_id: string | null;
+  assignee_user_name: string | null;
+  status: string;
+  completed_at: string | null;
+}
+
+export interface AuditLog {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  field_changes: Record<string, unknown> | null;
+  reason: string | null;
+  actor_type: string;
+  actor_user_name: string | null;
+  actor_job_name: string | null;
+  created_at: string;
+}
+
+// ===== v0.5 API Client =====
+
+export const v5Api = {
+  // Dashboard
+  getDashboard: () => api.get<DashboardStats>("/dashboard/").then((r) => r.data),
+
+  // Shipments
+  listShipments: (params: { stage?: string; limit?: number; offset?: number; search?: string } = {}) =>
+    api.get<ShipmentListItem[]>("/shipments/", { params }).then((r) => r.data),
+  getShipment: (id: string) => api.get<ShipmentDetail>(`/shipments/${id}`).then((r) => r.data),
+  getBusinessPhase: (id: string) =>
+    api.get<BusinessPhaseInfo>(`/workflow/shipments/${id}/business-phase`).then((r) => r.data),
+  getDocumentChecklist: (id: string) =>
+    api.get<DocumentChecklist>(`/shipments/${id}/document-checklist`).then((r) => r.data),
+  getBookingConfirmations: (id: string) =>
+    api.get<BookingConfirmation[]>(`/shipments/${id}/booking-confirmations`).then((r) => r.data),
+  getContainers: (id: string) =>
+    api.get<Container[]>(`/shipments/${id}/containers`).then((r) => r.data),
+  getMilestones: (id: string) =>
+    api.get<Milestone[]>(`/api/v2/workflow/shipments/${id}/milestones`).then((r) => r.data),
+  getTasks: (id: string) =>
+    api.get<Task[]>(`/api/v2/workflow/shipments/${id}/tasks`).then((r) => r.data),
+  getAuditLogs: (id: string) =>
+    api.get<AuditLog[]>(`/audit-logs/?entity_type=shipment&entity_id=${id}`).then((r) => r.data),
+
+  // Partners
+  listPartners: () => api.get<Partner[]>("/partners/").then((r) => r.data),
+
+  // Migration monitor (v0.5 初始化)
+  getMigrationStatus: () => api.get("/migration/status").then((r) => r.data),
+  getApiStats: () => api.get("/migration/api-stats").then((r) => r.data),
 };
