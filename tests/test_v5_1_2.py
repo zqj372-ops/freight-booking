@@ -144,16 +144,20 @@ async def test_booking_request_full_lifecycle() -> None:
         assert r.status_code == 200
         assert r.json()["status"] == "draft"  # dry_run 不改状态
 
-        # 实际发送
+        # 实际发送 (P1#3 修复: SMTP 未配时返 502, BR 保持 draft)
         r = await c.post(f"/api/v2/booking-requests/{br1['id']}/send", json={
             "template_code": "booking_request",
             "to_emails": ["booking@agt-a.com"],
             "cc_emails": [],
             "dry_run": False,
         })
-        assert r.status_code == 200
-        assert r.json()["status"] == "sent"
-        assert r.json()["sent_at"] is not None
+        # 测试环境 SMTP 未配, 应该返 502, BR 不动
+        assert r.status_code == 502
+        assert "邮件" in r.json()["detail"] or "SMTP" in r.json()["detail"]
+        # 重新查 BR 状态
+        r2 = await c.get(f"/api/v2/booking-requests/{br1['id']}")
+        assert r2.json()["status"] == "draft"
+        assert r2.json()["sent_at"] is None
 
         # 改 ETD → 创建 BR v2 (supersedes v1)
         br2 = (await c.post("/api/v2/booking-requests/", json={

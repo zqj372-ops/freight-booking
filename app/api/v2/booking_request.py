@@ -278,26 +278,78 @@ async def send_booking_request(
     # 自动加 [job_no] 前缀
     subject = f"[{s.job_no}] {raw_subject}" if not raw_subject.startswith("[") else raw_subject
 
-    # 写 EmailLog
-    email_log = EmailLog(
-        template_code=payload.template_code,
-        to_emails=payload.to_emails,
-        cc_emails=payload.cc_emails,
-        subject=subject,
-        body=body,
-        status=EmailStatus.SENT if not payload.dry_run else EmailStatus.PENDING,
-        sent_at=datetime.now(timezone.utc) if not payload.dry_run else None,
-        booking_id=s.id,  # v0.4 字段, 暂存, 阶段 2 切 shipment_id
-    )
-    db.add(email_log)
-    await db.commit()
-    await db.refresh(email_log)
+    # P1#3 修复: 真正调 SMTP service, 失败不改 BR 状态 (避免假发送)
+    from app.services.email_service import EmailMessage as SMailMessage, send_email
 
-    if not payload.dry_run:
+    if payload.dry_run:
+        # dry_run: 只渲染不真发, EmailLog 记 PENDING, BR 状态不动
+        email_log = EmailLog(
+            template_code=payload.template_code,
+            to_emails=payload.to_emails,
+            cc_emails=payload.cc_emails,
+            subject=subject,
+            body=body,
+            status=EmailStatus.PENDING,
+            booking_id=s.id,
+            context={"dry_run": True},
+        )
+        db.add(email_log)
+        await db.commit()
+        await db.refresh(email_log)
+    else:
+        # 真发: 调 SMTP service
+        smtp_msg = SMailMessage(
+            to_emails=payload.to_emails,
+            cc_emails=payload.cc_emails,
+            subject=subject,
+            body=body,
+            attachments=[],
+            is_html=True,
+            template_code=payload.template_code,
+            booking_id=s.id,
+            context={"shipment_id": s.id, "booking_request_id": br.id},
+        )
+        try:
+            email_log = await send_email(smtp_msg, db)
+        except Exception as e:
+            # P1#3 关键: SMTP 失败不动 BR.status, 让用户看到 PENDING/FAILED 后重试
+            # send_email 内部已写一条 FAILED log (重试 max_retry 次后), 这里用其 log
+            await db.rollback()  # 清掉 send_email commit 之外的脏 session
+            # 重新查 log (rollback 后需要 refresh)
+            log_id_q = await db.execute(
+                select(EmailLog).where(EmailLog.booking_id == s.id).order_by(EmailLog.created_at.desc())
+            )
+            email_log = log_id_q.scalars().first()
+            # 写 audit + 返 502 (上游网关错, smtp 后端)
+            await write_audit_log(
+                db,
+                organization_id=br.organization_id,
+                entity_type="booking_request",
+                entity_id=br.id,
+                action=AuditAction.SEND,
+                actor=actor,
+                field_changes={
+                    "to": payload.to_emails,
+                    "cc": payload.cc_emails,
+                    "subject": subject,
+                    "dry_run": False,
+                    "email_log_id": email_log.id if email_log else None,
+                    "error": str(e)[:200],
+                },
+            )
+            await db.commit()
+            raise HTTPException(
+                status_code=502,
+                detail=f"邮件发送失败, BookingRequest 状态未改变 (留 PENDING/重试): {e}",
+            )
+        await db.refresh(email_log)
+
+    # 只有 SENT 状态才改 BR.status = SENT
+    if not payload.dry_run and email_log.status == EmailStatus.SENT:
         br.status = BookingRequestStatus.SENT
         br.sent_at = datetime.now(timezone.utc)
-    await db.commit()
-    await db.refresh(br)
+        await db.commit()
+        await db.refresh(br)
 
     await write_audit_log(
         db,
@@ -312,6 +364,7 @@ async def send_booking_request(
             "subject": subject,
             "dry_run": payload.dry_run,
             "email_log_id": email_log.id,
+            "email_status": email_log.status.value,
         },
     )
     await db.commit()
