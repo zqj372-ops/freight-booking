@@ -8,7 +8,6 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from app import __version__
@@ -100,6 +99,7 @@ app.include_router(v1_router, prefix="/api/v1")
 # v0.5 主用
 app.include_router(v2_router, prefix="/api/v2")
 
-# 静态资源 (uploads) - 仅供下载, 不开放上传
-if settings.upload_dir.exists():
-    app.mount("/files", StaticFiles(directory=str(settings.upload_dir)), name="files")
+# 静态资源: 不再挂载 /files (P1#1 修复: 防止匿名下载服务端任意文件)
+# 改走 /api/v2/documents/{id}/download 鉴权 endpoint
+# if settings.upload_dir.exists():
+#     app.mount("/files", StaticFiles(directory=str(settings.upload_dir)), name="files")

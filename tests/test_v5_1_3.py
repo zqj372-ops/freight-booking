@@ -163,9 +163,13 @@ async def test_ingest_eml_creates_thread_and_message() -> None:
 
         eml_path = Path("/tmp/test_v5_1_3.eml")
         eml_path.write_bytes(bytes(eml))
+        # P1#2 修复: 强制相对 upload_dir, 写一个 .eml 副本到 upload_dir 内部
+        from app.config import settings
+        upload_dir_eml = Path(settings.upload_dir) / "test_v5_1_3.eml"
+        upload_dir_eml.write_bytes(bytes(eml))
 
         try:
-            r = await c.post(f"/api/v2/emails/ingest-eml?eml_path={eml_path}")
+            r = await c.post("/api/v2/emails/ingest-eml?eml_path=test_v5_1_3.eml")
             assert r.status_code == 200, r.text
             data = r.json()
             assert data["matched_shipment_id"] == s["id"]
@@ -183,6 +187,7 @@ async def test_ingest_eml_creates_thread_and_message() -> None:
             assert msg["status"] == "processed"  # 自动匹配成功
         finally:
             eml_path.unlink(missing_ok=True)
+            upload_dir_eml.unlink(missing_ok=True)
 
 
 @pytest.mark.asyncio
@@ -204,12 +209,17 @@ async def test_email_thread_in_reply_to_links() -> None:
         eml1.set_content("Please book this shipment")
         eml1_path = Path("/tmp/test_v5_out.eml")
         eml1_path.write_bytes(bytes(eml1))
+        # P1#2 修复: 写副本到 upload_dir
+        from app.config import settings
+        eml1_upload = Path(settings.upload_dir) / "test_v5_out.eml"
+        eml1_upload.write_bytes(bytes(eml1))
         try:
-            r1 = await c.post(f"/api/v2/emails/ingest-eml?eml_path={eml1_path}")
+            r1 = await c.post("/api/v2/emails/ingest-eml?eml_path=test_v5_out.eml")
             assert r1.status_code == 200
             assert r1.json()["matched_shipment_id"] == s["id"]
         finally:
             eml1_path.unlink(missing_ok=True)
+            eml1_upload.unlink(missing_ok=True)
 
         # 第二封 inbound, In-Reply-To 引用第一封
         eml2 = PyEmailMessage()
@@ -222,8 +232,11 @@ async def test_email_thread_in_reply_to_links() -> None:
         eml2.set_content("Confirmed, see SO attached")
         eml2_path = Path("/tmp/test_v5_in.eml")
         eml2_path.write_bytes(bytes(eml2))
+        # P1#2 修复: 写副本到 upload_dir
+        eml2_upload = Path(settings.upload_dir) / "test_v5_in.eml"
+        eml2_upload.write_bytes(bytes(eml2))
         try:
-            r2 = await c.post(f"/api/v2/emails/ingest-eml?eml_path={eml2_path}")
+            r2 = await c.post("/api/v2/emails/ingest-eml?eml_path=test_v5_in.eml")
             assert r2.status_code == 200
             # 跟第一封同一个 thread
             assert r2.json()["thread_id"] == r1.json()["thread_id"]
@@ -252,8 +265,12 @@ async def test_list_messages_by_thread() -> None:
         eml.set_content("test")
         eml_path = Path("/tmp/test_list.eml")
         eml_path.write_bytes(bytes(eml))
+        # P1#2 修复: 写副本到 upload_dir
+        from app.config import settings
+        eml_upload = Path(settings.upload_dir) / "test_list.eml"
+        eml_upload.write_bytes(bytes(eml))
         try:
-            r1 = await c.post(f"/api/v2/emails/ingest-eml?eml_path={eml_path}")
+            r1 = await c.post("/api/v2/emails/ingest-eml?eml_path=test_list.eml")
             assert r1.status_code == 200
             actual_thread_id = r1.json()["thread_id"]
 
@@ -265,3 +282,4 @@ async def test_list_messages_by_thread() -> None:
             assert msgs[0]["direction"] == "inbound"
         finally:
             eml_path.unlink(missing_ok=True)
+            eml_upload.unlink(missing_ok=True)

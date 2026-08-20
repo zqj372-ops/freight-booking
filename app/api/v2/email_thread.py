@@ -158,16 +158,28 @@ async def ingest_eml(
 
     v0.5 简化: 不接 IMAP poll, 手动调用此 endpoint 把 .eml 灌进来.
     v0.6 接入 APScheduler 自动定时拉.
+
+    P1#2 安全: 强制路径在 upload_dir 范围内, 拒绝对路径越界 (/etc/hosts 等).
     """
     from app.config import settings
 
     org = await get_default_organization(db)
     actor = Actor.from_request(request)
-    path = Path(eml_path)
-    if not path.is_absolute():
-        path = settings.upload_dir.parent / eml_path
+    upload_root = Path(settings.upload_dir).resolve()
+    # 强制相对路径: 不接受 eml_path=/etc/hosts
+    if Path(eml_path).is_absolute():
+        raise HTTPException(
+            status_code=400,
+            detail="eml_path must be relative to upload_dir (no absolute paths allowed)",
+        )
+    path = (upload_root / eml_path).resolve()
+    # 验证仍在 upload_dir 之内
+    if path != upload_root and not str(path).startswith(str(upload_root) + "/"):
+        raise HTTPException(status_code=400, detail="path escape detected")
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"eml file not found: {eml_path}")
+    if path.suffix.lower() != ".eml":
+        raise HTTPException(status_code=400, detail=f"file must be .eml, got: {path.suffix}")
 
     parsed = parse_eml_file(str(path))
 

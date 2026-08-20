@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import shutil
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -51,6 +53,44 @@ from app.services.document_service import (
 
 router = APIRouter()
 
+# 允许的文件后缀 (P1#1: 拒绝 .. 越界)
+_ALLOWED_EXTS = {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".eml"}
+# 净化: 把路径分隔符和 .. 干掉
+_FILENAME_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _sanitize_filename(raw: str) -> str:
+    """只保留 basename, 把 / \\ .. 和非 ASCII 安全字符以外的都替换成 _."""
+    if not raw:
+        return "unnamed"
+    # 先取 basename, 拒 ../ 和绝对路径
+    name = Path(raw).name
+    if not name or name in {".", ".."}:
+        return "unnamed"
+    # 强制后缀白名单
+    ext = Path(name).suffix.lower()
+    if ext not in _ALLOWED_EXTS:
+        return "unnamed"
+    stem = Path(name).stem
+    stem_safe = _FILENAME_SAFE.sub("_", stem).strip("._-") or "unnamed"
+    return f"{stem_safe}{ext}"
+
+
+def _safe_resolve(file_path: str) -> Path:
+    """Resolve file path (绝对/相对都可), 验证仍在 upload_dir 范围内.
+
+    用于: 上传写入 / 下载读取. 任何 upload_dir 之外路径都返 400.
+    """
+    upload_root = Path(settings.upload_dir).resolve()
+    p = Path(file_path)
+    if not p.is_absolute():
+        p = upload_root / p
+    abs_path = p.resolve()
+    # 必须 upload_root 之内 (允许 upload_root 自身)
+    if abs_path != upload_root and not str(abs_path).startswith(str(upload_root) + "/"):
+        raise HTTPException(status_code=400, detail="path escape detected")
+    return abs_path
+
 
 @router.post("/upload", response_model=DocumentRead, status_code=201)
 async def upload_document(
@@ -66,7 +106,14 @@ async def upload_document(
 
     if not file.filename:
         raise HTTPException(status_code=400, detail="filename required")
-    mime = detect_mime_type(file.filename)
+    # P1#1: 净化文件名, 拒 ../ / 绝对路径 / 非法后缀
+    safe_name = _sanitize_filename(file.filename)
+    if safe_name == "unnamed":
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported filename or extension: {file.filename!r} (allowed: {sorted(_ALLOWED_EXTS)})",
+        )
+    mime = detect_mime_type(safe_name)
     if not is_allowed_mime_type(mime):
         raise HTTPException(
             status_code=400,
@@ -83,13 +130,13 @@ async def upload_document(
     from app.services.document_service import compute_file_hash
     file_hash = compute_file_hash(content)
 
-    # 写本地
+    # P1#1: 写本地 (uuid 重命名 + 路径 resolve + 白名单校验)
     today = datetime.now(timezone.utc)
     rel_path = (
         f"attachments/{org.id}/{today.year}/{today.month:02d}/"
-        f"{file_hash[:12]}_{file.filename}"
+        f"{uuid.uuid4().hex}_{safe_name}"
     )
-    abs_path = Path(settings.upload_dir) / rel_path
+    abs_path = _safe_resolve(rel_path)
     abs_path.parent.mkdir(parents=True, exist_ok=True)
     abs_path.write_bytes(content)
 
@@ -196,6 +243,34 @@ async def get_document(
     if not doc:
         raise HTTPException(status_code=404, detail="document not found")
     return DocumentRead.model_validate(doc)
+
+
+# P1#1 修复: 替代 main.py 的 /files 静态 mount, 走鉴权 + 路径白名单
+@router.get("/{document_id}/download")
+async def download_document(
+    document_id: str, db: AsyncSession = Depends(db_session)
+):
+    """下载文档 (鉴权 + 路径白名单, 替代匿名 /files 静态 mount)."""
+    from fastapi.responses import FileResponse
+
+    org = await get_default_organization(db)
+    doc = (await db.execute(
+        select(Document).where(
+            Document.id == document_id,
+            Document.organization_id == org.id,
+        )
+    )).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="document not found")
+    # 验证 file_path 在 upload_dir 范围内 (防御纵深)
+    abs_path = _safe_resolve(doc.file_path)
+    if not abs_path.exists():
+        raise HTTPException(status_code=410, detail="file gone")
+    return FileResponse(
+        path=str(abs_path),
+        filename=doc.filename,
+        media_type=doc.mime_type or "application/octet-stream",
+    )
 
 
 @router.get("/{document_id}/extractions", response_model=list[ExtractionRead])
