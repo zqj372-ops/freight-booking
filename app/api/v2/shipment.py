@@ -16,8 +16,10 @@ from app.models.booking_request import BookingRequest, BookingRequestStatus
 from app.models.container import Container
 from app.models.partner import Partner
 from app.models.shipment import Shipment, ShipmentStage
+from app.models.task import Task
 from app.schemas.shipment import (
     ShipmentCreate,
+    ShipmentEventsUpdate,
     ShipmentListQuery,
     ShipmentRead,
     ShipmentStageChange,
@@ -25,6 +27,7 @@ from app.schemas.shipment import (
     ShipmentUpdate,
 )
 from app.services.numbering import generate_job_no
+from app.services.triggers import TriggerEvent, fire_event
 
 router = APIRouter()
 
@@ -292,7 +295,17 @@ async def update_status(
     await db.refresh(s)
 
     after = {k: getattr(s, k) for k in payload.model_fields_set if k != "reason"}
-    field_changes = {k: {"old": before.get(k), "new": after.get(k)} for k in after if before.get(k) != after.get(k)}
+    field_changes = {}
+    for k in after:
+        old_v = before.get(k)
+        new_v = after.get(k)
+        if old_v == new_v:
+            continue
+        if hasattr(old_v, "isoformat"):
+            old_v = old_v.isoformat()
+        if hasattr(new_v, "isoformat"):
+            new_v = new_v.isoformat()
+        field_changes[k] = {"old": old_v, "new": new_v}
     if field_changes:
         await write_audit_log(
             db,
@@ -351,3 +364,101 @@ async def list_shipment_containers(
     stmt = select(Container).where(Container.shipment_id == shipment_id)
     rows = (await db.execute(stmt)).scalars().all()
     return [ContainerRead.model_validate(r) for r in rows]
+
+
+# v0.5 1.5.3: 11 触发字段 + fire 17 SLA trigger
+_EVENT_TO_TRIGGER = {
+    "so_received_at": TriggerEvent.SO_RECEIVED,
+    "si_info_ready_at": TriggerEvent.SI_INFO_READY,
+    "bl_draft_received_at": TriggerEvent.BL_DRAFT_RECEIVED,
+    "sealed_at": TriggerEvent.SEALED,
+    "empty_return_due_at": TriggerEvent.EMPTY_RETURN_DUE,
+}
+
+
+@router.patch("/{shipment_id}/events", response_model=ShipmentRead)
+async def update_trigger_events(
+    shipment_id: str,
+    payload: ShipmentEventsUpdate,
+    request: Request,
+    db: AsyncSession = Depends(db_session),
+) -> ShipmentRead:
+    """v0.5 1.5.3: 设置 11 触发字段, 自动 fire 17 SLA trigger 建 task
+
+    每个被设置的触发字段:
+    - 写字段到 Shipment (e.g. so_received_at)
+    - fire 对应 trigger event → 建对应 SLA task
+    - 写 audit log
+    - 更新 last_updated_at
+
+    业务端用:
+    - 邮件解析自动调: 解析到 SO → fire SO_RECEIVED
+    - 操作员 UI 按钮: "已封柜" → PATCH sealed_at
+    - 调度任务: CY Cut-off 4h 前自动 fire CY_CUTOFF_APPROACHING
+    """
+    s = (await db.execute(
+        select(Shipment).where(Shipment.id == shipment_id)
+    )).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="shipment not found")
+    if s.stage == ShipmentStage.CANCELLED:
+        raise HTTPException(
+            status_code=400,
+            detail="cancelled shipment is terminal, cannot update events",
+        )
+    actor = Actor.from_request(request)
+
+    before = {k: getattr(s, k) for k in payload.model_fields_set if k != "reason"}
+    tasks_created: list[Task] = []
+
+    for field_name, trigger_event in _EVENT_TO_TRIGGER.items():
+        if field_name in payload.model_fields_set and getattr(payload, field_name) is not None:
+            new_val = getattr(payload, field_name)
+            setattr(s, field_name, new_val)
+            # fire trigger
+            new_tasks = await fire_event(
+                db, event=trigger_event, shipment=s, occurred_at=new_val,
+            )
+            tasks_created.extend(new_tasks)
+
+    # 其他 6 个字段 (booking_request_sent_at / cy_open_at / si_cutoff_at / vgm_cutoff_at /
+    # cy_cutoff_at / last_updated_at): 仅存值, 不 fire trigger
+    for field_name in [
+        "booking_request_sent_at", "cy_open_at", "si_cutoff_at",
+        "vgm_cutoff_at", "cy_cutoff_at", "last_updated_at",
+    ]:
+        if field_name in payload.model_fields_set:
+            setattr(s, field_name, getattr(payload, field_name))
+
+    now = datetime.now(timezone.utc)
+    s.last_updated_at = now
+    await db.commit()
+    await db.refresh(s)
+
+    after = {k: getattr(s, k) for k in payload.model_fields_set if k != "reason"}
+    field_changes = {}
+    for k in after:
+        old_v = before.get(k)
+        new_v = after.get(k)
+        if old_v == new_v:
+            continue
+        # JSON serialize datetime
+        if hasattr(old_v, "isoformat"):
+            old_v = old_v.isoformat()
+        if hasattr(new_v, "isoformat"):
+            new_v = new_v.isoformat()
+        field_changes[k] = {"old": old_v, "new": new_v}
+    if field_changes:
+        await write_audit_log(
+            db,
+            organization_id=s.organization_id,
+            entity_type="shipment",
+            entity_id=s.id,
+            action=AuditAction.UPDATE,
+            actor=actor,
+            field_changes=field_changes,
+            reason=payload.reason,
+            context={"tasks_created": [t.code.value for t in tasks_created]} if tasks_created else None,
+        )
+        await db.commit()
+    return ShipmentRead.model_validate(s)

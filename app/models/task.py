@@ -42,6 +42,23 @@ class TaskCode(str, enum.Enum):
     CONFIRM_CARGO_READY = "confirm_cargo_ready"  # 确认货物就绪
     CONFIRM_LOADED = "confirm_loaded"  # 确认装船
     HANDLE_EXCEPTION = "handle_exception"  # 处理异常
+    # v0.5 1.5.3: 16 个新 SLA task code
+    SEND_SO_TO_TRUCKER = "send_so_to_trucker"  # 将 SO 发给拖车行 (2h)
+    SEND_SI = "send_si"  # 发送 SI 补料 (2h, 资料齐全)
+    REVIEW_BL_DRAFT = "review_bl_draft"  # 核对提单草稿/修改件 (30min)
+    SEND_CUSTOMS_DOCS = "send_customs_docs"  # 发送出口报关资料 (封柜后 2h)
+    CONFIRM_CUSTOMS_RELEASED = "confirm_customs_released"  # 确认出口放行 (CY Cut-off 前)
+    HANDLE_INSPECTION = "handle_inspection"  # 处理官方查验 (高优)
+    CHECK_DEPARTURE = "check_departure"  # 查询是否开船 (ETD+1d)
+    GET_ONBOARD_BL = "get_onboard_bl"  # 取得开船提单 (ATD+2d)
+    GET_EMF = "get_emf"  # 取得 EMF (ATD+2d)
+    CHECK_ARRIVAL = "check_arrival"  # 查询到港情况 (ETA-3d)
+    PAYMENT_REQUEST = "payment_request"  # 发起请款/预付款 (ETA-7d)
+    TELEX_BL = "telex_bl"  # 取得电放提单 (ETA-3 工作日)
+    GET_ARRIVAL_NOTICE = "get_arrival_notice"  # 取得 AN (ETA 前)
+    GET_LOAD_PLAN = "get_load_plan"  # 准备 Load Plan (拆柜前)
+    PROVIDE_PROOF = "provide_proof"  # 提供水单 (付款后立即)
+    RETURN_EMPTY = "return_empty"  # 归还空柜 (还柜截止前)
 
 
 class Task(Base, OrganizationScopedMixin, TimestampMixin):

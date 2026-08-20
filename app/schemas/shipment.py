@@ -173,3 +173,31 @@ class ShipmentStatusUpdate(BaseModel):
 
     # 可选 reason (留 audit)
     reason: str | None = Field(None, min_length=5)
+
+
+class ShipmentEventsUpdate(BaseModel):
+    """v0.5 1.5.3: 11 触发字段 + fire 17 SLA trigger
+
+    设置触发字段 → 后端自动建对应 SLA task.
+    - so_received_at → fire SO_RECEIVED (建 send_so_to_trucker 2h task)
+    - si_info_ready_at → fire SI_INFO_READY (建 send_si 2h task)
+    - bl_draft_received_at → fire BL_DRAFT_RECEIVED (建 review_bl_draft 30min task)
+    - sealed_at → fire SEALED (建 send_customs_docs 2h task)
+    - empty_return_due_at → fire EMPTY_RETURN_DUE (建 return_empty 提醒 task)
+    - 其他 6 个字段 (booking_request_sent_at / cy_open_at / si_cutoff_at / vgm_cutoff_at /
+      cy_cutoff_at / last_updated_at): 仅存值, 不 fire trigger
+    """
+
+    booking_request_sent_at: datetime | None = None
+    so_received_at: datetime | None = None
+    si_info_ready_at: datetime | None = None
+    bl_draft_received_at: datetime | None = None
+    sealed_at: datetime | None = None
+    cy_open_at: datetime | None = None
+    si_cutoff_at: datetime | None = None
+    vgm_cutoff_at: datetime | None = None
+    cy_cutoff_at: datetime | None = None
+    empty_return_due_at: datetime | None = None
+    last_updated_at: datetime | None = None
+
+    reason: str | None = Field(None, min_length=5)
