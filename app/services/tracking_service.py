@@ -25,11 +25,16 @@ def can_advance(from_status: TrackingStatus, to_status: TrackingStatus) -> bool:
 
 
 async def latest_status(db: AsyncSession, booking_id: str) -> TrackingStatus:
-    """获取某个 booking 最近的跟踪状态 (没有事件时返回 BOOKED)"""
+    """获取某个 booking 最近的跟踪状态 (没有事件时返回 BOOKED)
+
+    用 created_at 排序 (而非 occurred_at):
+    - occurred_at 是业务发生时间, 用户可能回填老时间
+    - created_at 是事件入库时间, 反映真实推进顺序
+    """
     stmt = (
         select(TrackingEvent)
         .where(TrackingEvent.booking_id == booking_id)
-        .order_by(TrackingEvent.occurred_at.desc())
+        .order_by(TrackingEvent.created_at.desc())
         .limit(1)
     )
     last = (await db.execute(stmt)).scalar_one_or_none()
@@ -135,12 +140,12 @@ async def kanban_data(
     bucket: dict[TrackingStatus, list[dict]] = {s: [] for s in TrackingStatus}
     for b in bookings:
         last_status = await latest_status(db, b.id)
-        # 拿最近事件
+        # 拿最近事件 (用 created_at, 不用 occurred_at, 后者可能被回填)
         last_event = (
             await db.execute(
                 select(TrackingEvent)
                 .where(TrackingEvent.booking_id == b.id)
-                .order_by(TrackingEvent.occurred_at.desc())
+                .order_by(TrackingEvent.created_at.desc())
                 .limit(1)
             )
         ).scalar_one_or_none()

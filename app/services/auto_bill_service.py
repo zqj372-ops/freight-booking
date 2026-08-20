@@ -306,17 +306,24 @@ async def compute_finance_kpi(db: AsyncSession) -> dict:
     pay_total, pay_paid, pay_pending = kpis(pay_bills)
 
     now = datetime.now(timezone.utc)
+    # SQLite 不存时区, 读出来是 naive, 统一成 aware 再比较
     overdue = [
         b for b in rec_bills
-        if b.due_at and b.due_at < now and b.status != BillStatus.PAID
+        if b.due_at
+        and (b.due_at if b.due_at.tzinfo else b.due_at.replace(tzinfo=timezone.utc)) < now
+        and b.status != BillStatus.PAID
     ]
 
     # 按船公司 (通过关联 booking)
     by_carrier: dict[str, float] = {}
     for b in rec_bills:
-        if b.status == BillStatus.PAID or not b.matched_booking:
+        if b.status == BillStatus.PAID:
             continue
-        car = b.matched_booking.carrier
+        # 优先用 matched_booking, 没有就用 booking_id 关联
+        bk = b.matched_booking or b.booking
+        if not bk:
+            continue
+        car = bk.carrier
         by_carrier[car] = by_carrier.get(car, 0) + (b.total_amount or 0)
 
     return {
