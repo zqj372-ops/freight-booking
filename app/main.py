@@ -12,11 +12,12 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from app import __version__
-from app.api.v1.router import api_router
+from app.api.v1.router import api_router as v1_router
+from app.api.v2 import api_router as v2_router
 from app.config import settings
 from app.core.logging import setup_logging
 from app.database import init_db
-from app.utils.bootstrap import seed_default_templates
+from app.utils.bootstrap import seed_default_templates, seed_default_organization
 
 
 @asynccontextmanager
@@ -30,6 +31,7 @@ async def lifespan(app: FastAPI):
     if settings.app_env == "development":
         await init_db()
         await seed_default_templates()
+        await seed_default_organization()
 
     # 启动后台调度器 (IMAP 自动拉取)
     from app.services.scheduler import start_scheduler, stop_scheduler
@@ -46,7 +48,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     version=__version__,
-    description="货代订舱系统: SO OCR 识别 + 邮件订舱 + 账单 + 代理管理",
+    description="货代订舱系统 v0.5: Shipment 聚合根 + 邮件订舱 + SO OCR + 账单",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
@@ -79,12 +81,16 @@ async def root() -> JSONResponse:
             "version": __version__,
             "docs": "/docs",
             "health": "/health",
-            "api": "/api/v1",
+            "api_v1": "/api/v1 (legacy, 只读)",
+            "api_v2": "/api/v2 (v0.5 主用)",
         }
     )
 
 
-app.include_router(api_router, prefix="/api/v1")
+# v0.4 兼容层, 写操作暂不禁用, 阶段 2 切换为只读
+app.include_router(v1_router, prefix="/api/v1")
+# v0.5 主用
+app.include_router(v2_router, prefix="/api/v2")
 
 # 静态资源 (uploads) - 仅供下载, 不开放上传
 if settings.upload_dir.exists():

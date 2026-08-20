@@ -4,6 +4,7 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.organization_context import get_default_organization
 from app.models.email_template import EmailTemplate
 
 
@@ -76,3 +77,12 @@ async def _seed(db: AsyncSession) -> None:
         db.add(EmailTemplate(**tpl))
         await db.commit()
     logger.info("已加载默认邮件模板 {} 条", len(DEFAULT_TEMPLATES))
+
+
+async def seed_default_organization() -> None:
+    """v0.5 启动时 seed 默认组织 (幂等)"""
+    from app.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        org = await get_default_organization(db)
+        logger.info("已加载默认组织: {} ({})", org.slug, org.display_name)
