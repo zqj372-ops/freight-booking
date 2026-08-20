@@ -32,8 +32,8 @@ services:
       context: ./web
       dockerfile: Dockerfile
       args:
-        # 反代走 docker network, 用 service name
-        VITE_API_BASE: /api/v1
+        # v0.5: 前端调用 /api/v2 (nginx 反代到 api:8000)
+        VITE_API_BASE: /api/v2
     container_name: freight-web
     restart: unless-stopped
     depends_on:

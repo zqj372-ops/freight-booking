@@ -10,7 +10,8 @@ RUN npm install --no-audit --no-fund
 # 复制源码 + 构建
 COPY . .
 # Vite build 时注入 API 地址 (docker-compose 通过 build args 传入)
-ARG VITE_API_BASE=/api/v1
+# v0.5: 主用 /api/v2 (v0.4 deprecated 只读兼容). nginx 反代到 api:8000.
+ARG VITE_API_BASE=/api/v2
 ENV VITE_API_BASE=$VITE_API_BASE
 RUN npm run build
 

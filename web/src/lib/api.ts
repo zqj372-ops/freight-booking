@@ -691,9 +691,9 @@ export const v5Api = {
   getContainers: (id: string) =>
     api.get<Container[]>(`/shipments/${id}/containers`).then((r) => r.data),
   getMilestones: (id: string) =>
-    api.get<Milestone[]>(`/api/v2/workflow/shipments/${id}/milestones`).then((r) => r.data),
+    api.get<Milestone[]>(`/workflow/shipments/${id}/milestones`).then((r) => r.data),
   getTasks: (id: string) =>
-    api.get<Task[]>(`/api/v2/workflow/shipments/${id}/tasks`).then((r) => r.data),
+    api.get<Task[]>(`/workflow/shipments/${id}/tasks`).then((r) => r.data),
   getAuditLogs: (id: string) =>
     api.get<AuditLog[]>(`/audit-logs/?entity_type=shipment&entity_id=${id}`).then((r) => r.data),
 
