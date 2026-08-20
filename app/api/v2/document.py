@@ -25,9 +25,11 @@ from app.core.audit import Actor, write_audit_log
 from app.core.organization_context import get_default_organization
 from app.models._base import AuditAction
 from app.models.document import (
+    DOCUMENT_TRANSITIONS,
     Document,
     DocumentExtraction,
     DocumentSource,
+    DocumentStatus,
     DocumentType,
     OcrStatus,
     ParseStatus,
@@ -36,6 +38,7 @@ from app.models.shipment import Shipment
 from app.schemas.document import (
     DocumentMatch,
     DocumentRead,
+    DocumentStatusTransition,
     ExtractionRead,
 )
 from app.services.document_service import (
@@ -278,6 +281,73 @@ async def manual_match(
             "shipment_id": {"old": None, "new": payload.shipment_id},
             "confidence": payload.confidence,
         },
+    )
+    await db.commit()
+    return DocumentRead.model_validate(doc)
+
+
+# v0.5 1.5.5: Document 文档状态机 transition
+@router.post("/{document_id}/transition", response_model=DocumentRead)
+async def transition_document(
+    document_id: str,
+    payload: DocumentStatusTransition,
+    request: Request,
+    db: AsyncSession = Depends(db_session),
+) -> DocumentRead:
+    """v0.5 1.5.5: 文档状态机 transition
+
+    合法转换 (见 DOCUMENT_TRANSITIONS):
+    - pending → uploaded
+    - uploaded → matched
+    - (any) → archived
+
+    - 写 audit log (action=UPDATE, field_changes={status: {old, new}}, reason 必填)
+    - archived 状态自动填 archived_at + archived_by
+    - 终态 archived 不能转出
+    """
+    doc = (await db.execute(
+        select(Document).where(Document.id == document_id)
+    )).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="document not found")
+    actor = Actor.from_request(request)
+
+    current_status = (
+        doc.status if isinstance(doc.status, DocumentStatus)
+        else DocumentStatus(doc.status)
+    )
+    try:
+        target = DocumentStatus(payload.to)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"invalid status: {payload.to}")
+
+    # 验证合法转换
+    allowed = DOCUMENT_TRANSITIONS.get(current_status, [])
+    if target not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"invalid transition: {current_status.value} → {target.value}. "
+                   f"allowed: {[s.value for s in allowed]}",
+        )
+
+    old_status = current_status.value
+    doc.status = target
+    if target == DocumentStatus.ARCHIVED:
+        doc.archived_at = datetime.now(timezone.utc)
+        doc.archived_by = actor.actor_user_id
+
+    await db.commit()
+    await db.refresh(doc)
+
+    await write_audit_log(
+        db,
+        organization_id=doc.organization_id,
+        entity_type="document",
+        entity_id=doc.id,
+        action=AuditAction.UPDATE,
+        actor=actor,
+        field_changes={"status": {"old": old_status, "new": target.value}},
+        reason=payload.reason,
     )
     await db.commit()
     return DocumentRead.model_validate(doc)

@@ -39,6 +39,7 @@ from app.models.operational_exception import (  # noqa: F401
     OperationalException, ExceptionCode, ExceptionSeverity, ExceptionStatus, ExceptionDetectedBy,
 )
 from app.models.legacy_entity_map import LegacyEntityMap  # noqa: F401
+from app.models.bill_v5 import BillV5, BillStatus, BillType, BillKind  # noqa: F401
 
 __all__ = [
     # v0.4
@@ -64,4 +65,5 @@ __all__ = [
     "Task", "TaskCode", "TaskStatus",
     "OperationalException", "ExceptionCode", "ExceptionSeverity", "ExceptionStatus", "ExceptionDetectedBy",
     "LegacyEntityMap",
+    "BillV5", "BillStatus", "BillType", "BillKind",
 ]

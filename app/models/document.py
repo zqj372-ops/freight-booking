@@ -38,6 +38,31 @@ class DocumentType(str, enum.Enum):
     OTHER = "other"
 
 
+class DocumentStatus(str, enum.Enum):
+    """v0.5 1.5.5: Document 文档状态机 (4 态)
+
+    pending → uploaded (上传完成) → matched (关联到 Shipment/BC/BR) → archived (业务完结)
+    - pending: 刚创建, 还没上传文件 (建 Document 记录但 file_path 占位)
+    - uploaded: 文件已落地, 待 OCR / 匹配
+    - matched: 已关联到 Shipment/BC/BR, 进入业务流
+    - archived: 业务完结, 归档 (不参与匹配, 但保留查询)
+    """
+
+    PENDING = "pending"
+    UPLOADED = "uploaded"
+    MATCHED = "matched"
+    ARCHIVED = "archived"
+
+
+# 合法状态转换图
+DOCUMENT_TRANSITIONS: dict[DocumentStatus, list[DocumentStatus]] = {
+    DocumentStatus.PENDING: [DocumentStatus.UPLOADED, DocumentStatus.ARCHIVED],
+    DocumentStatus.UPLOADED: [DocumentStatus.MATCHED, DocumentStatus.ARCHIVED],
+    DocumentStatus.MATCHED: [DocumentStatus.ARCHIVED],
+    DocumentStatus.ARCHIVED: [],  # 终态
+}
+
+
 class OcrStatus(str, enum.Enum):
     """OCR 处理状态"""
 
@@ -97,6 +122,19 @@ class Document(Base, OrganizationScopedMixin, TimestampMixin):
     )
     mime_type: Mapped[str] = mapped_column(String(128), nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # v0.5 1.5.5: 文档状态机
+    status: Mapped[DocumentStatus] = mapped_column(
+        Enum(DocumentStatus), default=DocumentStatus.UPLOADED, nullable=False, index=True,
+        doc="pending → uploaded → matched → archived",
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        doc="归档时间, status=archived 时填",
+    )
+    archived_by: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, doc="归档人 user_id",
+    )
 
     # 来源
     source: Mapped[DocumentSource] = mapped_column(

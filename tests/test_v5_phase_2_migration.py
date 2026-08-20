@@ -400,24 +400,37 @@ async def test_migration_creates_email_messages() -> None:
 
 
 @pytest.mark.asyncio
-async def test_migration_bills_skipped() -> None:
-    """bills → LegacyEntityMap skipped, 不建实体"""
+async def test_migration_bills_to_v5() -> None:
+    """bills → bills_v5 (v0.5 阶段 1.5.5 补: 不再 skipped)"""
     from app.services.migration import run_migration
+    from app.models.bill_v5 import BillV5
 
     async with AsyncSessionLocal() as db:
         await _seed_v04_data(db)
         await db.commit()
         await run_migration(db)
-        # 找 3 个 bill 的 map
+        # bills_v5 表有 3 行
+        bills_v5 = (await db.execute(select(BillV5))).scalars().all()
+        assert len(bills_v5) == 3
+        # 找 bill map: v04_type=bill, v05_type=bill (不再 skipped)
         bill_maps = (await db.execute(
-            select(LegacyEntityMap).where(LegacyEntityMap.v04_type == "bill")
+            select(LegacyEntityMap).where(
+                LegacyEntityMap.v04_type == "bill",
+                LegacyEntityMap.v05_type == "bill",
+            )
         )).scalars().all()
         assert len(bill_maps) == 3
         for m in bill_maps:
-            assert m.v05_type == "skipped"
-            assert m.v05_id is None
-            assert m.context["reason"] == "v0.5 not yet implementing Bill model"
+            assert m.v05_id is not None
             assert "bill_no" in m.context
+        # 3 个 v0.4 bills 现在有 0 个 skipped
+        skipped_bill_maps = (await db.execute(
+            select(LegacyEntityMap).where(
+                LegacyEntityMap.v04_type == "bill",
+                LegacyEntityMap.v05_type == "skipped",
+            )
+        )).scalars().all()
+        assert len(skipped_bill_maps) == 0
 
 
 @pytest.mark.asyncio
@@ -442,7 +455,12 @@ async def test_migration_legacy_entity_map_complete() -> None:
         assert len(by_type["tracking_event"]) == 12
         assert len(by_type["email_log"]) == 8
         assert len(by_type["bill"]) == 3
-        # 1 个 tracking 标记为 skipped
+        # 1.5.5: bill 现在 v05_type=bill (不再 skipped)
+        bill_migrated = [m for m in by_type["bill"] if m.v05_type == "bill"]
+        assert len(bill_migrated) == 3
+        for m in bill_migrated:
+            assert m.v05_id is not None
+        # 1 个 tracking 仍标记为 skipped
         skipped_tracking = [m for m in by_type["tracking_event"] if m.v05_type == "skipped"]
         assert len(skipped_tracking) == 1
         assert "exception" in skipped_tracking[0].context["reason"].lower()

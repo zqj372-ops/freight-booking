@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 DocumentSourceLiteral = Literal["imap_attachment", "manual_upload", "generated"]
 DocumentTypeLiteral = Literal["so", "bl", "invoice", "si", "vgm", "packing_list", "other"]
+DocumentStatusLiteral = Literal["pending", "uploaded", "matched", "archived"]
 OcrStatusLiteral = Literal["pending", "processing", "done", "failed"]
 ParseStatusLiteral = Literal["unmatched", "matched_shipment", "matched_booking", "ignored"]
 ExtractionMethodLiteral = Literal["regex", "pdf_text", "ocr", "llm", "manual"]
@@ -52,6 +53,10 @@ class DocumentRead(BaseModel):
     uploaded_by: str | None
     uploaded_by_name: str | None
     uploaded_at: datetime
+    # v0.5 1.5.5: 文档状态机
+    status: str
+    archived_at: datetime | None
+    archived_by: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -61,6 +66,20 @@ class DocumentMatch(BaseModel):
 
     shipment_id: str
     confidence: float = Field(1.0, ge=0, le=1)
+
+
+class DocumentStatusTransition(BaseModel):
+    """v0.5 1.5.5: 文档状态机 transition
+
+    合法转换:
+    - pending → uploaded
+    - uploaded → matched
+    - (any) → archived
+    reason 必填 (>= 5 字符)
+    """
+
+    to: DocumentStatusLiteral
+    reason: str = Field(..., min_length=5, description="转换原因")
 
 
 class ExtractionRead(BaseModel):

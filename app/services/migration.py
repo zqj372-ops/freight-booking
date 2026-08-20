@@ -432,26 +432,130 @@ async def migrate_email_logs(db: AsyncSession, organization_id: str) -> int:
 
 
 async def migrate_bills(db: AsyncSession, organization_id: str) -> int:
-    """bills → skipped (v0.5 暂不建 Bill, 后续阶段补)"""
+    """bills → bills_v5 (v0.5 阶段 1.5.5 补: 不再 skipped)
+
+    字段映射:
+    - bill_no → bill_no
+    - bill_type (v0.4 String) → bill_type (v0.5 Enum)
+    - bill_kind (v0.4 Enum) → bill_kind (v0.5 Enum, 同名)
+    - booking_id → shipment_id (via legacy map)
+    - matched_booking_id → matched_shipment_id (via legacy map)
+    - status (v0.4 Enum) → status (v0.5 Enum, 字符串值相同 → 直接转)
+    - total_amount/tax_amount/amount_excl_tax/currency/file_* → 同名
+    - ocr_* → 同名
+    - issued_at/due_at/paid_at → 同名
+    - matched_at/match_score → 同名
+    - payment_method/payment_ref → 同名
+    - remark → remark
+    - line_items/extra_fields → 同名
+    """
     from app.models.bill import Bill  # noqa
+    from app.models.bill_v5 import (
+        BillV5, BillKind, BillStatus, BillType,
+    )
+
+    # 找 v0.5 BillStatus enum (同名) 兼容
+    v04_to_v05_status = {
+        "uploaded": BillStatus.UPLOADED,
+        "ocr_processing": BillStatus.OCR_PROCESSING,
+        "ocr_done": BillStatus.OCR_DONE,
+        "ocr_failed": BillStatus.OCR_FAILED,
+        "confirmed": BillStatus.CONFIRMED,
+        "disputed": BillStatus.DISPUTED,
+        "paid": BillStatus.PAID,
+    }
+
     bills = (await db.execute(select(Bill))).scalars().all()
     count = 0
     for b in bills:
         if await _already_mapped(db, organization_id, "bill", b.id):
             continue
+
+        # 找 shipment (从 booking map)
+        shipment_id = None
+        if b.booking_id:
+            map_row = await _already_mapped(db, organization_id, "booking", b.booking_id)
+            if map_row and map_row.v05_id:
+                shipment_id = map_row.v05_id
+
+        matched_shipment_id = None
+        if b.matched_booking_id:
+            map_row = await _already_mapped(db, organization_id, "booking", b.matched_booking_id)
+            if map_row and map_row.v05_id:
+                matched_shipment_id = map_row.v05_id
+
+        # bill_type
+        bill_type = BillType.RECEIVABLE
+        if hasattr(b, "bill_type") and b.bill_type:
+            try:
+                bill_type = BillType(b.bill_type)
+            except ValueError:
+                bill_type = BillType.RECEIVABLE
+
+        # bill_kind (v0.4 已是同名 Enum)
+        bill_kind = BillKind.OTHER
+        if hasattr(b, "bill_kind") and b.bill_kind:
+            try:
+                bill_kind = BillKind(b.bill_kind.value if hasattr(b.bill_kind, "value") else b.bill_kind)
+            except (ValueError, AttributeError):
+                bill_kind = BillKind.OTHER
+
+        # status
+        v05_status = BillStatus.UPLOADED
+        v04_status_str = b.status.value if hasattr(b.status, "value") else str(b.status)
+        v05_status = v04_to_v05_status.get(v04_status_str, BillStatus.UPLOADED)
+
+        new_bill = BillV5(
+            id=_new_id(),
+            organization_id=organization_id,
+            bill_no=b.bill_no,
+            bill_type=bill_type,
+            bill_kind=bill_kind,
+            shipment_id=shipment_id,
+            matched_shipment_id=matched_shipment_id,
+            seller_name=b.seller_name,
+            seller_tax_no=b.seller_tax_no,
+            buyer_name=b.buyer_name,
+            buyer_tax_no=b.buyer_tax_no,
+            currency=b.currency or "CNY",
+            total_amount=b.total_amount,
+            tax_amount=b.tax_amount,
+            amount_excl_tax=b.amount_excl_tax,
+            file_path=b.file_path,
+            file_name=b.file_name,
+            file_mime=b.file_mime,
+            file_size=b.file_size or 0,
+            ocr_text=b.ocr_text,
+            ocr_engine=b.ocr_engine,
+            ocr_confidence=b.ocr_confidence,
+            ocr_error=b.ocr_error,
+            ocr_at=b.ocr_at,
+            line_items=b.line_items or [],
+            extra_fields=b.extra_fields or {},
+            status=v05_status,
+            issued_at=b.issued_at,
+            due_at=b.due_at,
+            paid_at=b.paid_at,
+            matched_at=b.matched_at,
+            match_score=b.match_score,
+            payment_method=b.payment_method,
+            payment_ref=b.payment_ref,
+            remark=b.remark,
+        )
+        db.add(new_bill)
         await _record_map(
-            db, organization_id, "bill", b.id, "skipped", None,
+            db, organization_id, "bill", b.id, "bill", new_bill.id,
             {
-                "reason": "v0.5 not yet implementing Bill model",
                 "bill_no": b.bill_no,
-                "amount": float(b.total_amount) if b.total_amount else None,
+                "total_amount": float(b.total_amount) if b.total_amount else None,
                 "currency": b.currency,
-                "v04_booking_id": b.booking_id,
+                "v04_status": v04_status_str,
+                "v05_status": v05_status.value,
             },
         )
         count += 1
     await db.flush()
-    logger.info("migrated {} bills → skipped", count)
+    logger.info("migrated {} bills → bills_v5", count)
     return count
 
 

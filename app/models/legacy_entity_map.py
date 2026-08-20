@@ -39,7 +39,7 @@ class LegacyEntityMap(Base, OrganizationScopedMixin, TimestampMixin):
     )
     v05_type: Mapped[str] = mapped_column(
         String(32), nullable=False, index=True,
-        doc="shipment/booking_confirmation/document/partner/milestone/email_message/skipped",
+        doc="shipment/booking_confirmation/document/partner/milestone/email_message/bill/skipped",
     )
     v05_id: Mapped[str | None] = mapped_column(
         String(36), nullable=True, index=True,
