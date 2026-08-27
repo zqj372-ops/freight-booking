@@ -20,6 +20,7 @@ from app.api.v2 import (
     forecast,
     exception_update,
     checklist,
+    transit_time,
 )
 
 api_router = APIRouter()
@@ -38,5 +39,6 @@ api_router.include_router(operational_exception.router, prefix="/exceptions", ta
 api_router.include_router(forecast.router, prefix="/forecasts", tags=["预报 v0.6"])
 api_router.include_router(exception_update.router, prefix="/exceptions", tags=["异常 AI 跟进 v0.6"])
 api_router.include_router(checklist.router, tags=["清单复核 v0.6.2"])
+api_router.include_router(transit_time.router, tags=["头程时效 v0.6.3"])
 api_router.include_router(bill_v5.router, prefix="/bills", tags=["账单 v0.5"])
 api_router.include_router(migration.router, prefix="/migration", tags=["v0.5 初始化"])

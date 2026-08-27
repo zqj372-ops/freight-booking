@@ -408,7 +408,7 @@ async def _build_overview(
         status = "scheduled"
 
     # 最新 ETA 变更
-    latest_eta_update = (
+    latest_eta_update_row = (
         await db.execute(
             select(EtaUpdate)
             .where(EtaUpdate.shipment_id == s.id)
@@ -416,6 +416,18 @@ async def _build_overview(
             .limit(1)
         )
     ).scalar_one_or_none()
+    latest_eta_update = None
+    if latest_eta_update_row:
+        latest_eta_update = {
+            "id": latest_eta_update_row.id,
+            "old_eta": latest_eta_update_row.old_eta.isoformat() if latest_eta_update_row.old_eta else None,
+            "new_eta": latest_eta_update_row.new_eta.isoformat(),
+            "delta_days": latest_eta_update_row.delta_days,
+            "source": latest_eta_update_row.source.value,
+            "reason": latest_eta_update_row.reason.value,
+            "change_reason": latest_eta_update_row.change_reason,
+            "created_at": latest_eta_update_row.created_at.isoformat() if latest_eta_update_row.created_at else None,
+        }
 
     # 未关闭异常数
     open_ex_count = (

@@ -53,6 +53,24 @@ async def _exception_followup_job() -> None:
             logger.exception("定时异常跟进失败: {}", e)
 
 
+async def _eta_delay_check_job() -> None:
+    """v0.6.3 定时任务: 每天跑一次 ETA 延误检测
+
+    检测已 DEPARTED 但 ETA 已过未卸货/未派送的 shipment, 自动建异常
+    """
+    from app.database import AsyncSessionLocal
+    from app.services.transit_time import detect_eta_delays
+
+    async with AsyncSessionLocal() as db:
+        try:
+            new_exs = await detect_eta_delays(db)
+            if new_exs:
+                await db.commit()
+                logger.info(f"ETA 延误检测: 新建 {len(new_exs)} 个异常")
+        except Exception as e:
+            logger.exception("定时 ETA 延误检测失败: {}", e)
+
+
 async def start_scheduler() -> None:
     """启动后台调度器 (应用启动时调用)"""
     global _scheduler, _running
@@ -93,6 +111,19 @@ async def start_scheduler() -> None:
         next_run_time=datetime.now(timezone.utc),  # 启动后立即跑一次
     )
     logger.info("异常 AI 跟进定时任务已注册: 每 {} 秒", followup_interval)
+
+    # v0.6.3 ETA 延误检测 (每天 1 次, 默认 9:00 UTC)
+    eta_check_hour = getattr(settings, "eta_check_hour_utc", 9)
+    _scheduler.add_job(
+        _eta_delay_check_job,
+        trigger="cron",
+        hour=eta_check_hour,
+        minute=0,
+        id="eta_delay_check",
+        name="ETA 延误检测",
+        replace_existing=True,
+    )
+    logger.info(f"ETA 延误检测定时任务已注册: 每天 {eta_check_hour}:00 UTC")
 
     _scheduler.start()
     _running = True
