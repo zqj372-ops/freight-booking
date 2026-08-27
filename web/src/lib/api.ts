@@ -954,3 +954,106 @@ export const v6ExceptionApi = {
     api.post<ExceptionTimeline>(`/exceptions/${id}/accept-suggestion`, null, { params: { summary } })
       .then((r) => r.data),
 };
+
+// ========== v0.6.2 清单复核 ==========
+
+export type ChecklistReviewType = "pre_load" | "pre_cutoff" | "pre_departure" | "random";
+export type ChecklistReviewStatus = "draft" | "completed" | "signed_off" | "auto_closed";
+export type ChecklistItemCategory = "container" | "declaration" | "hs_code" | "cutoff_doc";
+export type ChecklistItemCode =
+  | "container_no_missing" | "seal_no_missing" | "container_type_mismatch" | "container_count_mismatch"
+  | "pieces_mismatch" | "weight_mismatch" | "volume_mismatch"
+  | "hs_code_mismatch" | "dangerous_goods_flag_missing" | "oversize_goods_flag_missing"
+  | "si_missing" | "vgm_missing" | "ci_missing" | "pl_missing";
+export type ChecklistSeverity = "pass" | "warning" | "critical";
+
+export interface ChecklistItem {
+  id: string;
+  review_id: string;
+  code: ChecklistItemCode;
+  category: ChecklistItemCategory;
+  label: string;
+  expected_value: string | null;
+  actual_value: string | null;
+  match: boolean;
+  severity: ChecklistSeverity;
+  delta: number | null;
+  delta_pct: number | null;
+  related_document_id: string | null;
+  related_container_id: string | null;
+  note: string | null;
+  acknowledged_by_user_id: string | null;
+  acknowledged_at: string | null;
+  created_at: string;
+}
+
+export interface ChecklistReview {
+  id: string;
+  shipment_id: string;
+  review_type: ChecklistReviewType;
+  status: ChecklistReviewStatus;
+  reviewed_at: string | null;
+  signed_off_at: string | null;
+  reviewed_by_user_id: string | null;
+  reviewed_by_user_name: string | null;
+  total_items: number;
+  passed_items: number;
+  warning_items: number;
+  critical_items: number;
+  overall_severity: ChecklistSeverity;
+  trigger_reason: string | null;
+  related_exception_ids: string[] | null;
+  note: string | null;
+  items: ChecklistItem[];
+  created_at: string;
+}
+
+export interface ChecklistReviewListItem {
+  id: string;
+  shipment_id: string;
+  review_type: ChecklistReviewType;
+  status: ChecklistReviewStatus;
+  reviewed_at: string | null;
+  signed_off_at: string | null;
+  total_items: number;
+  passed_items: number;
+  warning_items: number;
+  critical_items: number;
+  overall_severity: ChecklistSeverity;
+  created_at: string;
+}
+
+export const v6ChecklistApi = {
+  // 启动复核
+  startReview: (
+    shipment_id: string,
+    data: { review_type?: ChecklistReviewType; trigger_reason?: string; note?: string } = {},
+  ) =>
+    api.post<ChecklistReview>(
+      `/shipments/${shipment_id}/checklist-reviews`,
+      { review_type: "random", ...data },
+    ).then((r) => r.data),
+
+  // 复核历史
+  listReviews: (shipment_id: string, status?: ChecklistReviewStatus) =>
+    api.get<ChecklistReviewListItem[]>(
+      `/shipments/${shipment_id}/checklist-reviews`,
+      { params: { status } },
+    ).then((r) => r.data),
+
+  // 详情
+  getReview: (id: string) =>
+    api.get<ChecklistReview>(`/checklist-reviews/${id}`).then((r) => r.data),
+
+  // 确认某项
+  acknowledgeItem: (review_id: string, item_id: string, note?: string) =>
+    api.post<ChecklistItem>(
+      `/checklist-reviews/${review_id}/items/${item_id}/ack`,
+      { note },
+    ).then((r) => r.data),
+
+  // 签收
+  signoff: (review_id: string, note?: string) =>
+    api.post<ChecklistReview>(`/checklist-reviews/${review_id}/signoff`, { note })
+      .then((r) => r.data),
+};

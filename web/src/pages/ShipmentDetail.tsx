@@ -1,7 +1,7 @@
 // v0.5 ShipmentDetail 业务详情 (8 业务阶段进度条 + 8 tab: 概览/节点/文件/柜/费用/日志/订舱/邮件)
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { v5Api, type BookingRequest, type EmailThread, type OperationalException } from "@/lib/api";
+import { v5Api, v6ChecklistApi, type BookingRequest, type EmailThread, type OperationalException } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -87,6 +87,12 @@ export function ShipmentDetail() {
   const msQ = useQuery({ queryKey: ["milestones", id], queryFn: () => v5Api.getMilestones(id!), enabled: !!id });
   const taskQ = useQuery({ queryKey: ["tasks", id], queryFn: () => v5Api.getTasks(id!), enabled: !!id });
   const auditQ = useQuery({ queryKey: ["audit", id], queryFn: () => v5Api.getAuditLogs(id!), enabled: !!id });
+  // v0.6.2 清单复核
+  const clRvwQ = useQuery({
+    queryKey: ["checklist-reviews", id],
+    queryFn: () => v6ChecklistApi.listReviews(id!),
+    enabled: !!id,
+  });
   // 阶段 3 第二批: 订舱申请 + 邮件 + 异常
   const brQ = useQuery<BookingRequest[]>({
     queryKey: ["shipment-booking-requests", id],
@@ -145,6 +151,7 @@ export function ShipmentDetail() {
           <TabsTrigger value="booking">订舱 ({brQ.data?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="emails">邮件 ({etQ.data?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="exceptions">异常 ({exQ.data?.length ?? 0})</TabsTrigger>
+          <TabsTrigger value="checklist">清单复核 ({clRvwQ.data?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="log">日志 ({auditQ.data?.length ?? 0})</TabsTrigger>
         </TabsList>
 
@@ -445,6 +452,78 @@ export function ShipmentDetail() {
                   )}
                 </tbody>
               </table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* 清单复核 Tab (v0.6.2) */}
+        <TabsContent value="checklist">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    await v6ChecklistApi.startReview(id!, {
+                      review_type: "random",
+                      trigger_reason: "操作员手动启动",
+                    });
+                    clRvwQ.refetch();
+                  }}
+                >
+                  立即复核
+                </Button>
+                <span className="text-xs text-slate-400">
+                  跑完 4 大类 14 项核对规则, critical 自动建异常
+                </span>
+              </div>
+              {clRvwQ.isLoading ? (
+                <div className="p-8 text-center text-slate-400">加载中...</div>
+              ) : !clRvwQ.data || clRvwQ.data.length === 0 ? (
+                <div className="p-8 text-center text-slate-400">
+                  暂无复核记录, 点击"立即复核"启动
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-600">
+                    <tr>
+                      <th className="p-3 text-left">类型</th>
+                      <th className="p-3 text-left">状态</th>
+                      <th className="p-3 text-left">严重度</th>
+                      <th className="p-3 text-left">汇总</th>
+                      <th className="p-3 text-left">时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {clRvwQ.data.map((rv) => (
+                      <tr key={rv.id} className="border-t hover:bg-slate-50">
+                        <td className="p-3 text-xs">{rv.review_type}</td>
+                        <td className="p-3 text-xs">{rv.status}</td>
+                        <td className="p-3">
+                          <Badge className={
+                            rv.overall_severity === "critical" ? "bg-red-100 text-red-700" :
+                            rv.overall_severity === "warning" ? "bg-yellow-100 text-yellow-700" :
+                            "bg-green-100 text-green-700"
+                          }>
+                            {rv.overall_severity}
+                          </Badge>
+                        </td>
+                        <td className="p-3 text-xs">
+                          {rv.passed_items} pass / {rv.warning_items} warn / {rv.critical_items} crit
+                        </td>
+                        <td className="p-3 text-xs">
+                          <Link
+                            to={`/checklist-reviews/${rv.id}`}
+                            className="text-sky-600 hover:underline"
+                          >
+                            {new Date(rv.created_at).toLocaleString("zh-CN")} →
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
