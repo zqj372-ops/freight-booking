@@ -35,6 +35,9 @@ class ExceptionCode(str, enum.Enum):
     EMAIL_PARSE_FAILED = "email_parse_failed"  # 邮件解析失败
     FORECAST_QUANTITY_MISMATCH = "forecast_quantity_mismatch"  # v0.6 预报柜数与实际 Shipment 不符
     FORECAST_ETD_MISMATCH = "forecast_etd_mismatch"  # v0.6 预报 ETD 与实际 Shipment 不符
+    ETA_DELAYED = "eta_delayed"  # v0.6.3 头程时效: ATD 后 ETA 变更 (船公司修订/港口拥堵)
+    ETA_PASSED_UNLOADED = "eta_passed_unloaded"  # v0.6.3 头程时效: ETA 已过 N 天仍未卸货
+    ETA_PASSED_DELIVERED = "eta_passed_delivered"  # v0.6.3 头程时效: ETA 已过 N 天仍未派送
 
 
 class ExceptionSeverity(str, enum.Enum):

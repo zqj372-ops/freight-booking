@@ -50,6 +50,9 @@ from app.models.checklist import (  # noqa: F401
     ChecklistReviewType, ChecklistReviewStatus,
     ChecklistItemCategory, ChecklistItemCode, ChecklistSeverity,
 )
+from app.models.transit_time import (  # noqa: F401
+    EtaUpdate, EtaUpdateSource, EtaUpdateReason,
+)
 
 __all__ = [
     # v0.4
@@ -85,4 +88,6 @@ __all__ = [
     "ChecklistReview", "ChecklistItem",
     "ChecklistReviewType", "ChecklistReviewStatus",
     "ChecklistItemCategory", "ChecklistItemCode", "ChecklistSeverity",
+    # v0.6.3 头程时效
+    "EtaUpdate", "EtaUpdateSource", "EtaUpdateReason",
 ]
