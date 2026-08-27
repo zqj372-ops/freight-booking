@@ -443,3 +443,142 @@ async def test_forecast_bulk_real_with_cross_source() -> None:
         assert fs[0].status == ForecastStatus.CONFIRMED
         # 第 2 条 (customer_service) 保持 forecasted
         assert fs[1].status == ForecastStatus.FORECASTED
+
+
+# ========== CSV 导入 ==========
+
+
+@pytest.mark.asyncio
+async def test_forecast_csv_import_basic() -> None:
+    """CSV 导入基本路径 (multipart/form-data)"""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        cid = await _make_customer(c, name="客户B")
+        csv_content = (
+            "customer_id,customer_name,pol,pod,container_type,container_count,target_etd,source_ref,commodity\n"
+            f"{cid},客户B,CNSHA,USLAX,40HQ,1,2026-09-15,CSV-001,Tools\n"
+            f"{cid},客户B,CNSHA,USLAX,40HQ,2,2026-09-15,CSV-002,Tools\n"
+        )
+        files = {"file": ("forecasts.csv", csv_content.encode("utf-8"), "text/csv")}
+        r = await c.post(
+            "/api/v2/forecasts/import/csv",
+            files=files,
+            data={"source": "sales", "dry_run": "false"},
+        )
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["created"] == 2
+        assert len(d["errors"]) == 0
+
+        # 验证 db
+        async with AsyncSessionLocal() as db:
+            fs = (await db.execute(select(Forecast))).scalars().all()
+        assert len(fs) == 2
+        assert all(f.source_ref.startswith("CSV-") for f in fs)
+
+
+@pytest.mark.asyncio
+async def test_forecast_csv_import_dry_run() -> None:
+    """CSV dry_run 预判不真入库"""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        cid = await _make_customer(c, name="客户C")
+        csv_content = (
+            "customer_id,customer_name,pol,pod,container_type,container_count,target_etd\n"
+            f"{cid},客户C,CNSHA,USLAX,40HQ,1,2026-09-15\n"
+        )
+        files = {"file": ("forecasts.csv", csv_content.encode("utf-8"), "text/csv")}
+        r = await c.post(
+            "/api/v2/forecasts/import/csv",
+            files=files,
+            data={"dry_run": "true"},
+        )
+        assert r.status_code == 200
+        d = r.json()
+        assert d["created"] == 0  # dry_run 不真建
+        # 验证 db 真的没建
+        async with AsyncSessionLocal() as db:
+            fs = (await db.execute(select(Forecast))).scalars().all()
+        assert len(fs) == 0
+
+
+@pytest.mark.asyncio
+async def test_forecast_csv_import_source_ref_prefix() -> None:
+    """CSV 导入 source_ref_prefix 自动加前缀 (防同 file 多行撞 UNIQUE)"""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        cid = await _make_customer(c, name="客户D")
+        # 同一 source_ref 在不同 file 重复 → 第一次 + 第二次应成功 (前缀让它们不同)
+        csv_content = (
+            "customer_id,customer_name,pol,pod,container_type,container_count,target_etd,source_ref\n"
+            f"{cid},客户D,CNSHA,USLAX,40HQ,1,2026-09-15,WO-001\n"
+            f"{cid},客户D,CNNGB,DEHAM,40HQ,1,2026-09-16,WO-001\n"  # 同样 source_ref 但不同 pol/pod → 同 fingerprint 不会
+        )
+        files = {"file": ("forecasts.csv", csv_content.encode("utf-8"), "text/csv")}
+        r = await c.post(
+            "/api/v2/forecasts/import/csv",
+            files=files,
+            data={"source_ref_prefix": "2026-08-27-imp-001"},
+        )
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["created"] == 2
+        # 验证 source_ref 加了前缀 (含 row idx 保证 UNIQUE)
+        async with AsyncSessionLocal() as db:
+            fs = (await db.execute(
+                select(Forecast).order_by(Forecast.target_etd)
+            )).scalars().all()
+        for f in fs:
+            assert f.source_ref.startswith("2026-08-27-imp-001-")
+            assert "-row" in f.source_ref  # row idx 防撞
+
+
+@pytest.mark.asyncio
+async def test_forecast_csv_import_parse_error() -> None:
+    """CSV 导入: 解析错 (缺字段) 不阻塞其他行"""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        cid = await _make_customer(c, name="客户E")
+        csv_content = (
+            "customer_id,customer_name,pol,pod,container_type,container_count,target_etd\n"
+            f"{cid},客户E,CNSHA,USLAX,40HQ,1,2026-09-15\n"
+            # 缺 customer_name 和 target_etd
+            f"{cid},,CNSHA,USLAX,40HQ,1,\n"
+            f"{cid},客户E,CNNGB,DEHAM,40HQ,1,2026-09-16\n"
+        )
+        files = {"file": ("forecasts.csv", csv_content.encode("utf-8"), "text/csv")}
+        r = await c.post(
+            "/api/v2/forecasts/import/csv",
+            files=files,
+            data={"dry_run": "false"},
+        )
+        assert r.status_code == 200
+        d = r.json()
+        assert d["created"] == 2  # 1 + 3 成功, 2 失败
+        assert len(d["errors"]) == 1
+        assert "row 3" in str(d["errors"][0]) or "missing required" in str(d["errors"][0])
+
+
+@pytest.mark.asyncio
+async def test_forecast_csv_import_with_emoji() -> None:
+    """CSV 导入: 客户端发 BOM 头时也能正常解析 (utf-8-sig)"""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        cid = await _make_customer(c, name="客户F")
+        # 加 BOM 头
+        csv_content = (
+            "﻿customer_id,customer_name,pol,pod,container_type,container_count,target_etd\n"
+            f"{cid},客户F,CNSHA,USLAX,40HQ,1,2026-09-15\n"
+        )
+        files = {"file": ("forecasts.csv", csv_content.encode("utf-8-sig"), "text/csv")}
+        r = await c.post(
+            "/api/v2/forecasts/import/csv",
+            files=files,
+            data={"dry_run": "false"},
+        )
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["created"] == 1
+
+        # 验证 db 状态
+        async with AsyncSessionLocal() as db:
+            fs = (await db.execute(
+                select(Forecast).order_by(Forecast.created_at.asc())
+            )).scalars().all()
+        assert len(fs) == 1  # emoji 测试只 1 行
+        assert fs[0].customer_name == "客户F"

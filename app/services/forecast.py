@@ -40,12 +40,23 @@ def make_content_fingerprint(
     pod: str,
     target_etd: date,
     container_type: str,
+    container_count: int | None = None,
 ) -> str:
-    """跨源 dedup 指纹 = sha256(customer + pol + pod + etd + container_type)
+    """跨源 dedup 指纹 = sha256(customer + pol + pod + etd + container_type + container_count)
 
     标准化: 全部小写 + 去空格, 避免 'CNSHA' vs ' cnsh a' 不同指纹.
+    container_count 纳入: 同一客户同日同航线同柜型但柜数不同 = 不同预报 (是合并升级, 不是重复)
     """
-    payload = f"{customer_id.strip().lower()}|{pol.strip().lower()}|{pod.strip().lower()}|{target_etd.isoformat()}|{container_type.strip().lower()}"
+    parts = [
+        customer_id.strip().lower(),
+        pol.strip().lower(),
+        pod.strip().lower(),
+        target_etd.isoformat() if hasattr(target_etd, 'isoformat') else str(target_etd),
+        container_type.strip().lower(),
+    ]
+    if container_count is not None:
+        parts.append(str(container_count))
+    payload = "|".join(parts)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
 
 
@@ -74,6 +85,7 @@ async def find_duplicate_forecasts(
     pod: str,
     target_etd: date,
     container_type: str,
+    container_count: int | None = None,
     source: ForecastSource | None = None,
     source_ref: str | None = None,
 ) -> list[Forecast]:
@@ -82,7 +94,9 @@ async def find_duplicate_forecasts(
     同源同 source_ref 完全去重 (DB UNIQUE 也会拒, 这里返 warning 用)
     跨源同 fingerprint 标记"待人工确认"
     """
-    fingerprint = make_content_fingerprint(customer_id, pol, pod, target_etd, container_type)
+    fingerprint = make_content_fingerprint(
+        customer_id, pol, pod, target_etd, container_type, container_count=container_count,
+    )
     existing = await find_existing_forecasts_by_fingerprint(db, organization_id, fingerprint)
     # 兼容: 同 source + source_ref 也算 dup (即使 fingerprint 算错)
     if source and source_ref:
@@ -143,6 +157,7 @@ async def create_forecast(
         payload["pod"],
         payload["target_etd"],
         payload["container_type"],
+        container_count=payload.get("container_count"),
     )
     existing = await find_existing_forecasts_by_fingerprint(db, organization_id, fingerprint)
     action, note = dedup_action_for(payload, existing)

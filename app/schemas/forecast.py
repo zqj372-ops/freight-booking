@@ -149,3 +149,11 @@ class ForecastCancelRequest(BaseModel):
     """取消预报"""
 
     reason: str = Field(..., min_length=3, max_length=500)
+
+
+class ForecastCsvImportRequest(BaseModel):
+    """CSV 导入请求 body (含 dry_run 开关)"""
+
+    dry_run: bool = Field(False, description="True = 仅 dedup 预判, False = 真实导入")
+    source: ForecastSourceLiteral = "manual"
+    source_ref_prefix: str | None = Field(None, description="source_ref 自动加前缀, 防止同 file 多行撞 UNIQUE")
