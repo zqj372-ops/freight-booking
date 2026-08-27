@@ -45,6 +45,11 @@ from app.models.exception_update import (  # noqa: F401
     ExceptionUpdate, ExceptionUpdateType, ExceptionUpdateSource,
     ExceptionFetchJob, ExceptionFetchJobStatus,
 )
+from app.models.checklist import (  # noqa: F401
+    ChecklistReview, ChecklistItem,
+    ChecklistReviewType, ChecklistReviewStatus,
+    ChecklistItemCategory, ChecklistItemCode, ChecklistSeverity,
+)
 
 __all__ = [
     # v0.4
@@ -76,4 +81,8 @@ __all__ = [
     # v0.6 异常 AI 跟进
     "ExceptionUpdate", "ExceptionUpdateType", "ExceptionUpdateSource",
     "ExceptionFetchJob", "ExceptionFetchJobStatus",
+    # v0.6.2 清单复核
+    "ChecklistReview", "ChecklistItem",
+    "ChecklistReviewType", "ChecklistReviewStatus",
+    "ChecklistItemCategory", "ChecklistItemCode", "ChecklistSeverity",
 ]
