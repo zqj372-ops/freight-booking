@@ -845,3 +845,112 @@ export const v6Api = {
   cancelForecast: (id: string, reason: string) =>
     api.post<Forecast>(`/forecasts/${id}/cancel`, { reason }).then((r) => r.data),
 };
+
+// ========== v0.6.1 异常 AI 跟进 ==========
+
+export type ExceptionUpdateType =
+  | "ai_fetch"
+  | "ai_summary"
+  | "user_note"
+  | "status_change"
+  | "ai_suggestion"
+  | "user_response";
+
+export type ExceptionUpdateSource =
+  | "carrier_website"
+  | "email"
+  | "wechat"
+  | "user"
+  | "ai_inference";
+
+export interface ExceptionUpdate {
+  id: string;
+  exception_id: string;
+  update_type: ExceptionUpdateType;
+  source: ExceptionUpdateSource;
+  summary: string;
+  raw_data: Record<string, unknown> | null;
+  ai_model: string | null;
+  ai_confidence: number | null;
+  created_by_type: string;
+  created_by_user_id: string | null;
+  created_by_user_name: string | null;
+  created_at: string;
+}
+
+export type ExceptionFetchJobStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "failed"
+  | "cancelled";
+
+export interface ExceptionFetchJob {
+  id: string;
+  exception_id: string;
+  status: ExceptionFetchJobStatus;
+  source: ExceptionUpdateSource;
+  next_run_at: string;
+  last_run_at: string | null;
+  last_error: string | null;
+  run_count: number;
+  max_runs: number;
+  created_at: string;
+}
+
+export interface ExceptionTimeline {
+  exception_id: string;
+  shipment_id: string;
+  code: string;
+  severity: string;
+  status: string;
+  detected_at: string;
+  resolved_at: string | null;
+  resolution: string | null;
+  updates: ExceptionUpdate[];
+  fetch_jobs: ExceptionFetchJob[];
+  latest_ai_suggestion: string | null;
+  latest_ai_confidence: number | null;
+}
+
+export interface ExceptionAiAnswer {
+  question: string;
+  answer: string;
+  confidence: number;
+  sources: string[];
+  model: string;
+}
+
+export const v6ExceptionApi = {
+  // timeline
+  getTimeline: (id: string) =>
+    api.get<ExceptionTimeline>(`/exceptions/${id}/timeline`).then((r) => r.data),
+
+  // 用户加 update
+  addUpdate: (id: string, summary: string, accept_ai_suggestion = false) =>
+    api.post<ExceptionUpdate[]>(`/exceptions/${id}/updates`, {
+      summary,
+      accept_ai_suggestion,
+    }).then((r) => r.data),
+
+  // 立即触发 AI 跟进
+  fetchNow: (id: string, sources?: ExceptionUpdateSource[]) =>
+    api.post<ExceptionTimeline>(`/exceptions/${id}/fetch-now`, { sources }).then((r) => r.data),
+
+  // fetch jobs 列表
+  listFetchJobs: (id: string, status?: ExceptionFetchJobStatus) =>
+    api.get<ExceptionFetchJob[]>(`/exceptions/${id}/fetch-jobs`, { params: { status } }).then((r) => r.data),
+
+  // 全局 AI 问答
+  askAi: (question: string, shipment_id?: string, exception_id?: string) =>
+    api.post<ExceptionAiAnswer>("/exceptions/ai-question", {
+      question,
+      shipment_id,
+      exception_id,
+    }).then((r) => r.data),
+
+  // 采纳 AI 建议 (close 异常)
+  acceptSuggestion: (id: string, summary = "采纳 AI 建议, 异常关闭") =>
+    api.post<ExceptionTimeline>(`/exceptions/${id}/accept-suggestion`, null, { params: { summary } })
+      .then((r) => r.data),
+};

@@ -410,7 +410,14 @@ export function ShipmentDetail() {
                 <tbody>
                   {(exQ.data ?? []).map((e) => (
                     <tr key={e.id} className="border-t">
-                      <td className="p-3 font-mono text-xs">{e.code}</td>
+                      <td className="p-3 font-mono text-xs">
+                        <Link
+                          to={`/exceptions/${e.id}`}
+                          className="text-sky-600 hover:underline"
+                        >
+                          {e.code}
+                        </Link>
+                      </td>
                       <td className="p-3">
                         <Badge className={
                           e.severity === "critical" ? "bg-red-100 text-red-800" :
