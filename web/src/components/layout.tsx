@@ -12,6 +12,7 @@ import {
   Mail,
   ClipboardList,
   Activity,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 const nav = [
   { to: "/", icon: LayoutDashboard, label: "工作台" },
   { to: "/shipments", icon: Package, label: "业务单" },
+  { to: "/forecasts", icon: TrendingUp, label: "预报货量", v06: true },
   { to: "/booking-requests", icon: ClipboardList, label: "订舱申请" },
   { to: "/email-threads", icon: Mail, label: "邮件中心" },
   { to: "/tasks", icon: ListTodo, label: "任务中心", v06: true },

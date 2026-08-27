@@ -2,6 +2,7 @@
 import axios, { type AxiosInstance } from "axios";
 
 // v0.5: 切到 v2 API (v0.4 deprecated, 仅 GET 兼容)
+// v0.6: 仍走 v2, 后续 /api/v3 不在本任务范围
 const baseURL = import.meta.env.VITE_API_BASE || "/api/v2";
 
 export const api: AxiosInstance = axios.create({
@@ -721,4 +722,126 @@ export const v5Api = {
   // Migration monitor (v0.5 初始化)
   getMigrationStatus: () => api.get("/migration/status").then((r) => r.data),
   getApiStats: () => api.get("/migration/api-stats").then((r) => r.data),
+};
+
+// ===== v0.6 Forecast (预报货量统计) =====
+
+export type ForecastSource =
+  | "sales" | "customer_service" | "shending" | "subsidiary" | "manual";
+export type ForecastStatus =
+  | "forecasted" | "confirmed" | "allocated" | "loaded" | "cancelled";
+
+export interface Forecast {
+  id: string;
+  organization_id: string;
+  source: ForecastSource;
+  source_ref: string | null;
+  content_fingerprint: string;
+  customer_id: string;
+  customer_name: string;
+  pol: string;
+  pod: string;
+  container_type: string;
+  container_count: number;
+  target_etd: string;  // ISO date
+  commodity: string | null;
+  weight_kg: number | null;
+  volume_cbm: number | null;
+  pieces: number | null;
+  is_dangerous: boolean;
+  status: ForecastStatus;
+  shipment_id: string | null;
+  notes: string | null;
+  source_metadata: Record<string, unknown> | null;
+  created_by_user_id: string | null;
+  created_by_user_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ForecastDedupCheck {
+  fingerprint: string;
+  match_count: number;
+  match_ids: string[];
+  new_forecast_id: string | null;
+  action: "create_new" | "merge_into_existing" | "needs_human";
+  note: string;
+}
+
+export interface ForecastBulkCreateResult {
+  created: number;
+  duplicates: number;
+  errors: Array<Record<string, unknown>>;
+  details: ForecastDedupCheck[];
+}
+
+export interface ForecastWeeklyRow {
+  pol: string;
+  pod: string;
+  customer_id: string;
+  customer_name: string;
+  total_count: number;
+  confirmed_count: number;
+  allocated_count: number;
+  pending_count: number;
+  forecast_ids: string[];
+  source_breakdown: Record<string, number>;
+}
+
+export interface ForecastWeeklySummary {
+  week_start: string;
+  week_end: string;
+  rows: ForecastWeeklyRow[];
+  total_forecast_count: number;
+  total_allocated_count: number;
+  cut_off_alerts: Array<{
+    forecast_id: string;
+    shipment_id: string;
+    pol: string;
+    pod: string;
+    customer_name: string;
+    container_count: number;
+    cy_cutoff_at: string;
+    days_remaining: number;
+  }>;
+}
+
+export const v6Api = {
+  // CRUD
+  listForecasts: (params: {
+    status?: string;
+    source?: string;
+    customer_id?: string;
+    target_etd_from?: string;
+    target_etd_to?: string;
+    limit?: number;
+    offset?: number;
+  } = {}) =>
+    api.get<Forecast[]>("/forecasts/", { params }).then((r) => r.data),
+  getForecast: (id: string) =>
+    api.get<Forecast>(`/forecasts/${id}`).then((r) => r.data),
+  createForecast: (data: Partial<Forecast>) =>
+    api.post<Forecast>("/forecasts/", data).then((r) => r.data),
+  bulkCreateForecasts: (data: { forecasts: Partial<Forecast>[]; dry_run?: boolean }) =>
+    api.post<ForecastBulkCreateResult>("/forecasts/bulk", data).then((r) => r.data),
+  importCsv: (file: File, options: { dry_run?: boolean; source?: string; source_ref_prefix?: string }) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    if (options.dry_run !== undefined) fd.append("dry_run", String(options.dry_run));
+    if (options.source) fd.append("source", options.source);
+    if (options.source_ref_prefix) fd.append("source_ref_prefix", options.source_ref_prefix);
+    return api.post<ForecastBulkCreateResult>("/forecasts/import/csv", fd, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }).then((r) => r.data);
+  },
+  // 周汇总
+  getWeeklySummary: (week_start?: string, cut_off_alert_days = 3) =>
+    api.get<ForecastWeeklySummary>("/forecasts/weekly", {
+      params: { week_start, cut_off_alert_days },
+    }).then((r) => r.data),
+  // 配载/取消
+  allocateForecast: (id: string, shipment_id: string) =>
+    api.post<Forecast>(`/forecasts/${id}/allocate`, { shipment_id }).then((r) => r.data),
+  cancelForecast: (id: string, reason: string) =>
+    api.post<Forecast>(`/forecasts/${id}/cancel`, { reason }).then((r) => r.data),
 };
