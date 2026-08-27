@@ -381,6 +381,12 @@ async def create_exception(
     await db.commit()
     await db.refresh(ex)
 
+    # v0.6.1 AI 跟进: 异常创建后自动 enqueue 抓取 job
+    from app.services.exception_followup import on_exception_created
+    await on_exception_created(db, ex)
+    await db.commit()
+    await db.refresh(ex)
+
     await write_audit_log(
         db,
         organization_id=org.id,

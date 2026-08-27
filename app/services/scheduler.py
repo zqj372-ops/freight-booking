@@ -1,6 +1,7 @@
 """APScheduler 定时任务调度
 
 - IMAP 拉取 (imap_poll_interval_seconds)
+- v0.6.1 异常 AI 跟进 (exception_fetch_interval_seconds, 默认 2h)
 - 未来可加: 邮件重试、对账扫描
 """
 
@@ -35,6 +36,23 @@ async def _imap_poll_job() -> None:
             logger.exception("定时 IMAP 拉取失败: {}", e)
 
 
+async def _exception_followup_job() -> None:
+    """v0.6.1 定时任务: 跑所有 PENDING 异常抓取 job
+
+    默认每 2h 跑一次, 异常创建后立即可被拉到 (next_run_at = now)
+    """
+    from app.database import AsyncSessionLocal
+    from app.services.exception_followup import schedule_pending_jobs
+
+    async with AsyncSessionLocal() as db:
+        try:
+            processed = await schedule_pending_jobs(db, max_jobs=50)
+            if processed > 0:
+                logger.info(f"异常 AI 跟进: 本次处理 {processed} 个 job")
+        except Exception as e:
+            logger.exception("定时异常跟进失败: {}", e)
+
+
 async def start_scheduler() -> None:
     """启动后台调度器 (应用启动时调用)"""
     global _scheduler, _running
@@ -63,6 +81,18 @@ async def start_scheduler() -> None:
             next_run_time=datetime.now(timezone.utc),  # 启动后立即跑一次
         )
         logger.info("IMAP 拉取定时任务已注册: 每 {} 秒", interval)
+
+    # v0.6.1 异常 AI 跟进 (每 2h, 默认, 可改)
+    followup_interval = max(300, getattr(settings, "exception_fetch_interval_seconds", 7200))
+    _scheduler.add_job(
+        _exception_followup_job,
+        trigger=IntervalTrigger(seconds=followup_interval),
+        id="exception_followup",
+        name="异常 AI 跟进",
+        replace_existing=True,
+        next_run_time=datetime.now(timezone.utc),  # 启动后立即跑一次
+    )
+    logger.info("异常 AI 跟进定时任务已注册: 每 {} 秒", followup_interval)
 
     _scheduler.start()
     _running = True
