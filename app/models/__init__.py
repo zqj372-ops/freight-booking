@@ -41,6 +41,10 @@ from app.models.operational_exception import (  # noqa: F401
 from app.models.legacy_entity_map import LegacyEntityMap  # noqa: F401
 from app.models.bill_v5 import BillV5, BillStatus, BillType, BillKind  # noqa: F401
 from app.models.forecast import Forecast, ForecastSource, ForecastStatus  # noqa: F401
+from app.models.exception_update import (  # noqa: F401
+    ExceptionUpdate, ExceptionUpdateType, ExceptionUpdateSource,
+    ExceptionFetchJob, ExceptionFetchJobStatus,
+)
 
 __all__ = [
     # v0.4
@@ -69,4 +73,7 @@ __all__ = [
     "BillV5", "BillStatus", "BillType", "BillKind",
     # v0.6 预报
     "Forecast", "ForecastSource", "ForecastStatus",
+    # v0.6 异常 AI 跟进
+    "ExceptionUpdate", "ExceptionUpdateType", "ExceptionUpdateSource",
+    "ExceptionFetchJob", "ExceptionFetchJobStatus",
 ]
