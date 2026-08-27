@@ -33,6 +33,8 @@ class ExceptionCode(str, enum.Enum):
     MISSING_SEAL_NO = "missing_seal_no"  # 缺封条号
     EMAIL_SEND_FAILED = "email_send_failed"  # 邮件发送失败
     EMAIL_PARSE_FAILED = "email_parse_failed"  # 邮件解析失败
+    FORECAST_QUANTITY_MISMATCH = "forecast_quantity_mismatch"  # v0.6 预报柜数与实际 Shipment 不符
+    FORECAST_ETD_MISMATCH = "forecast_etd_mismatch"  # v0.6 预报 ETD 与实际 Shipment 不符
 
 
 class ExceptionSeverity(str, enum.Enum):
