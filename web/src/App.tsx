@@ -19,6 +19,7 @@ import { Exceptions } from "@/pages/Exceptions";
 import { ExceptionDetail } from "@/pages/ExceptionDetail";
 import { AiAssistant } from "@/pages/AiAssistant";
 import { ChecklistReviewDetail } from "@/pages/ChecklistReviewDetail";
+import { TransitBoardPage } from "@/pages/TransitBoard";
 
 export default function App() {
   return (
@@ -46,6 +47,8 @@ export default function App() {
         <Route path="/ai-assistant" element={<AiAssistant />} />
         {/* v0.6.2 清单复核 */}
         <Route path="/checklist-reviews/:id" element={<ChecklistReviewDetail />} />
+        {/* v0.6.3 头程时效 */}
+        <Route path="/transit" element={<TransitBoardPage />} />
         {/* v0.4 兼容路由 (deprecated) - 引导到 v0.5 */}
         <Route path="/so" element={<LegacyPlaceholder title="SO 收件箱" v0_5_path="/shipments" />} />
         <Route path="/bookings" element={<LegacyPlaceholder title="订舱管理" v0_5_path="/shipments" />} />

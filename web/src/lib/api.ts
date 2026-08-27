@@ -1057,3 +1057,95 @@ export const v6ChecklistApi = {
     api.post<ChecklistReview>(`/checklist-reviews/${review_id}/signoff`, { note })
       .then((r) => r.data),
 };
+
+// ========== v0.6.3 头程时效 ==========
+
+export type EtaUpdateSource = "manual" | "document" | "carrier_api" | "system";
+export type EtaUpdateReason =
+  | "initial" | "carrier_revise" | "port_delay" | "weather"
+  | "vessel_delay" | "documentation" | "rolled" | "other";
+
+export interface EtaUpdate {
+  id: string;
+  shipment_id: string;
+  old_eta: string | null;
+  new_eta: string;
+  delta_days: number;
+  source: EtaUpdateSource;
+  reason: EtaUpdateReason;
+  change_reason: string | null;
+  related_document_id: string | null;
+  updated_by_user_id: string | null;
+  updated_by_user_name: string | null;
+  triggered_exception_id: string | null;
+  created_at: string;
+}
+
+export interface TransitOverview {
+  shipment_id: string;
+  job_no: string;
+  pol: string;
+  pod: string;
+  stage: string;
+  etd: string | null;
+  eta: string | null;
+  current_carrier: string | null;
+  status: string;
+  days_to_eta: number | null;
+  is_delayed: boolean;
+  delay_days: number;
+  has_departed: boolean;
+  has_arrived: boolean;
+  has_discharged: boolean;
+  has_delivered: boolean;
+  latest_eta_update: {
+    id: string;
+    old_eta: string | null;
+    new_eta: string;
+    delta_days: number;
+    source: EtaUpdateSource;
+    reason: EtaUpdateReason;
+    change_reason: string | null;
+    created_at: string | null;
+  } | null;
+  open_exception_count: number;
+}
+
+export interface TransitBoard {
+  total: number;
+  by_status: Record<string, number>;
+  in_transit: TransitOverview[];
+  delayed: TransitOverview[];
+  upcoming_eta_7d: TransitOverview[];
+  upcoming_eta_1d: TransitOverview[];
+}
+
+export const v6TransitApi = {
+  // 更新 ETA
+  updateEta: (
+    shipment_id: string,
+    data: {
+      new_eta: string;
+      reason?: EtaUpdateReason;
+      change_reason?: string;
+      source?: EtaUpdateSource;
+      related_document_id?: string;
+    },
+  ) =>
+    api.post<EtaUpdate>(`/shipments/${shipment_id}/eta`, data).then((r) => r.data),
+
+  // ETA 历史
+  listEtaHistory: (shipment_id: string, limit = 50) =>
+    api.get<EtaUpdate[]>(`/shipments/${shipment_id}/eta/history`, { params: { limit } })
+      .then((r) => r.data),
+
+  // 头程看板
+  getBoard: () =>
+    api.get<TransitBoard>("/transit/board").then((r) => r.data),
+
+  // 手动触发延误检测
+  checkEtaDelays: () =>
+    api.post<{ checked: boolean; new_exceptions_count: number; new_exception_ids: string[] }>(
+      "/transit/check-eta-delays",
+    ).then((r) => r.data),
+};

@@ -14,6 +14,7 @@ import {
   Activity,
   TrendingUp,
   Bot,
+  Ship,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +27,7 @@ const nav = [
   { to: "/email-threads", icon: Mail, label: "邮件中心" },
   { to: "/tasks", icon: ListTodo, label: "任务中心", v06: true },
   { to: "/exceptions", icon: AlertTriangle, label: "异常中心", v06: true },
+  { to: "/transit", icon: Ship, label: "头程看板", v06: true },
   { to: "/ai-assistant", icon: Bot, label: "AI 助手", v06: true },
   { to: "/ops", icon: Activity, label: "运营驾驶舱" },
   { to: "/so", icon: Inbox, label: "SO 收件箱", legacy: true },

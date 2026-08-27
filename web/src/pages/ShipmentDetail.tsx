@@ -1,7 +1,7 @@
 // v0.5 ShipmentDetail 业务详情 (8 业务阶段进度条 + 8 tab: 概览/节点/文件/柜/费用/日志/订舱/邮件)
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { v5Api, v6ChecklistApi, type BookingRequest, type EmailThread, type OperationalException } from "@/lib/api";
+import { v5Api, v6ChecklistApi, v6TransitApi, type BookingRequest, type EmailThread, type OperationalException, type EtaUpdate } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -93,6 +93,12 @@ export function ShipmentDetail() {
     queryFn: () => v6ChecklistApi.listReviews(id!),
     enabled: !!id,
   });
+  // v0.6.3 ETA 历史
+  const etaQ = useQuery({
+    queryKey: ["eta-history", id],
+    queryFn: () => v6TransitApi.listEtaHistory(id!),
+    enabled: !!id,
+  });
   // 阶段 3 第二批: 订舱申请 + 邮件 + 异常
   const brQ = useQuery<BookingRequest[]>({
     queryKey: ["shipment-booking-requests", id],
@@ -152,6 +158,7 @@ export function ShipmentDetail() {
           <TabsTrigger value="emails">邮件 ({etQ.data?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="exceptions">异常 ({exQ.data?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="checklist">清单复核 ({clRvwQ.data?.length ?? 0})</TabsTrigger>
+          <TabsTrigger value="eta">ETA ({etaQ.data?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="log">日志 ({auditQ.data?.length ?? 0})</TabsTrigger>
         </TabsList>
 
@@ -518,6 +525,78 @@ export function ShipmentDetail() {
                           >
                             {new Date(rv.created_at).toLocaleString("zh-CN")} →
                           </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ETA 时效 Tab (v0.6.3) */}
+        <TabsContent value="eta">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-sm text-slate-600">当前 ETA:</span>
+                <span className="text-lg font-semibold">
+                  {shipQ.data?.eta || "未设"}
+                </span>
+                <span className="text-xs text-slate-400 ml-2">
+                  (操作员 PATCH /shipments/{id} 直接改; v0.6.3 走专用 endpoint 自动建延误异常)
+                </span>
+              </div>
+              {etaQ.isLoading ? (
+                <div className="p-8 text-center text-slate-400">加载中...</div>
+              ) : !etaQ.data || etaQ.data.length === 0 ? (
+                <div className="p-8 text-center text-slate-400">暂无 ETA 变更历史</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-600">
+                    <tr>
+                      <th className="p-3 text-left">时间</th>
+                      <th className="p-3 text-left">原 ETA</th>
+                      <th className="p-3 text-left">新 ETA</th>
+                      <th className="p-3 text-left">差</th>
+                      <th className="p-3 text-left">原因</th>
+                      <th className="p-3 text-left">说明</th>
+                      <th className="p-3 text-left">异常</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {etaQ.data.map((u: EtaUpdate) => (
+                      <tr key={u.id} className="border-t">
+                        <td className="p-3 text-xs text-slate-500">
+                          {new Date(u.created_at).toLocaleString("zh-CN")}
+                        </td>
+                        <td className="p-3 text-xs">{u.old_eta || "—"}</td>
+                        <td className="p-3 text-xs font-medium">{u.new_eta}</td>
+                        <td className="p-3 text-xs">
+                          <span className={
+                            u.delta_days > 0 ? "text-red-600 font-medium" :
+                            u.delta_days < 0 ? "text-green-600 font-medium" :
+                            "text-slate-400"
+                          }>
+                            {u.delta_days > 0 ? "+" : ""}{u.delta_days} 天
+                          </span>
+                        </td>
+                        <td className="p-3 text-xs">
+                          <Badge variant="outline" className="text-[10px]">{u.reason}</Badge>
+                        </td>
+                        <td className="p-3 text-xs text-slate-500">
+                          {u.change_reason || "—"}
+                        </td>
+                        <td className="p-3 text-xs">
+                          {u.triggered_exception_id ? (
+                            <Link
+                              to={`/exceptions/${u.triggered_exception_id}`}
+                              className="text-red-600 hover:underline"
+                            >
+                              ⚠️ 延误异常
+                            </Link>
+                          ) : "—"}
                         </td>
                       </tr>
                     ))}
