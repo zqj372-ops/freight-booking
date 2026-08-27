@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,6 +79,7 @@ async def create_forecast_endpoint(
             actor_user_id=actor.actor_user_id,
             actor_user_name=actor.actor_user_name,
             payload=payload.model_dump(),
+            auto_confirm=True,
         )
         await db.commit()
         await db.refresh(f)
@@ -142,6 +144,7 @@ async def bulk_create_forecasts(
                     actor_user_id=actor.actor_user_id,
                     actor_user_name=actor.actor_user_name,
                     payload=fc.model_dump(),
+                    auto_confirm=True,
                 )
                 details.append(ForecastDedupCheck(
                     fingerprint=fingerprint,

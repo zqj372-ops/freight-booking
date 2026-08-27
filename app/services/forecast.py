@@ -349,8 +349,8 @@ async def weekly_summary(
 
 
 # 阈值: 数量差 > 20% 或绝对值差 > 2 柜算异常
-_FORECAST_QUANTITY_THRESHOLD_RATIO = 0.2
-_FORECAST_QUANTITY_THRESHOLD_ABS = 2
+_FORECAST_QUANTITY_THRESHOLD_RATIO = 0.0  # v0.5 Shipment container_count 强制 1, 任何不等即报
+_FORECAST_QUANTITY_THRESHOLD_ABS = 0    # 同上
 
 # 阈值: ETD 差 > 3 天算异常
 _FORECAST_ETD_DAYS_THRESHOLD = 3

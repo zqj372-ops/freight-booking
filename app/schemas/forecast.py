@@ -110,7 +110,6 @@ class ForecastBulkCreateResult(BaseModel):
 class ForecastWeeklyRow(BaseModel):
     """周汇总一行 (按 pol/pod × customer_id 聚合)"""
 
-    week_start: date
     pol: str
     pod: str
     customer_id: str
