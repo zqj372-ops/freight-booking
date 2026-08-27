@@ -37,11 +37,6 @@ from app.models.checklist import (
 )
 from app.models.container import Container
 from app.models.document import Document, DocumentExtraction, DocumentType
-from app.models.exception_update import (
-    ExceptionUpdate,
-    ExceptionUpdateSource,
-    ExceptionUpdateType,
-)
 from app.models.operational_exception import (
     ExceptionCode,
     ExceptionDetectedBy,
@@ -213,25 +208,38 @@ async def _check_container(
                 related_container_id=c.id,
             ))
         # 柜型
-        if c.container_type == shipment.container_type:
+        # v0.5 Shipment 没有 container_type 字段 (在 Container 表里)
+        # 多柜时检查柜型一致性; 单柜直接 pass
+        if len(containers) <= 1:
             items.append(_make_pass_item(
                 ChecklistItemCode.CONTAINER_TYPE_MISMATCH,
                 ChecklistItemCategory.CONTAINER,
                 f"柜型 ({c.container_no or c.id[:8]})",
-                shipment.container_type,
+                c.container_type,
                 c.container_type,
                 related_container_id=c.id,
             ))
         else:
-            items.append(_make_fail_item(
-                ChecklistItemCode.CONTAINER_TYPE_MISMATCH,
-                ChecklistItemCategory.CONTAINER,
-                f"柜型 ({c.container_no or c.id[:8]})",
-                shipment.container_type or "?",
-                c.container_type,
-                ChecklistSeverity.CRITICAL,
-                related_container_id=c.id,
-            ))
+            first_type = containers[0].container_type
+            if c.container_type == first_type:
+                items.append(_make_pass_item(
+                    ChecklistItemCode.CONTAINER_TYPE_MISMATCH,
+                    ChecklistItemCategory.CONTAINER,
+                    f"柜型一致 ({c.container_no or c.id[:8]})",
+                    first_type,
+                    c.container_type,
+                    related_container_id=c.id,
+                ))
+            else:
+                items.append(_make_fail_item(
+                    ChecklistItemCode.CONTAINER_TYPE_MISMATCH,
+                    ChecklistItemCategory.CONTAINER,
+                    f"柜型一致 ({c.container_no or c.id[:8]})",
+                    first_type,
+                    c.container_type,
+                    ChecklistSeverity.CRITICAL,
+                    related_container_id=c.id,
+                ))
 
     return items
 
@@ -252,7 +260,7 @@ async def _check_declaration(
             .join(Document, Document.id == DocumentExtraction.document_id)
             .where(
                 Document.shipment_id == shipment.id,
-                Document.document_type == DocumentType.PACKING_LIST,
+                Document.doc_type == DocumentType.PACKING_LIST,
             )
             .order_by(DocumentExtraction.created_at.desc())
             .limit(1)
@@ -411,7 +419,7 @@ async def _check_hs_code(
             .join(Document, Document.id == DocumentExtraction.document_id)
             .where(
                 Document.shipment_id == shipment.id,
-                Document.document_type.in_([DocumentType.INVOICE, DocumentType.PACKING_LIST]),
+                Document.doc_type.in_([DocumentType.INVOICE, DocumentType.PACKING_LIST]),
             )
             .order_by(DocumentExtraction.created_at.desc())
             .limit(1)
@@ -486,7 +494,7 @@ async def _check_cutoff_doc(
             select(Document).where(Document.shipment_id == shipment.id)
         )
     ).scalars().all()
-    has_type = {d.document_type for d in docs if d.document_type}
+    has_type = {d.doc_type for d in docs if d.doc_type}
 
     for doc_type, code, label in [
         (DocumentType.SI, ChecklistItemCode.SI_MISSING, "SI 补料"),
@@ -539,7 +547,6 @@ async def start_checklist(
         note=note,
         shipment_snapshot={
             "container_count": shipment.container_count,
-            "container_type": shipment.container_type,
             "pieces": shipment.pieces,
             "weight_kg": shipment.weight_kg,
             "volume_cbm": shipment.volume_cbm,
@@ -610,30 +617,6 @@ async def start_checklist(
     review.critical_items = critical
     review.overall_severity = overall
     review.related_exception_ids = related_exception_ids or None
-
-    # 写一个 STATUS_CHANGE update (清单复核完成)
-    update = ExceptionUpdate(
-        id=str(uuid.uuid4()),
-        organization_id=shipment.organization_id,
-        exception_id=None,  # 不属于某异常
-        update_type=ExceptionUpdateType.STATUS_CHANGE,
-        source=ExceptionUpdateSource.AI_INFERENCE,
-        summary=(
-            f"清单复核完成 ({review_type.value}): "
-            f"共 {len(all_items)} 项, pass {passed}, warning {warning}, critical {critical}, "
-            f"overall={overall.value}"
-        ),
-        raw_data={
-            "review_id": review.id,
-            "review_type": review_type.value,
-            "total_items": len(all_items),
-            "passed": passed,
-            "warning": warning,
-            "critical": critical,
-        },
-        created_by_type="system",
-    )
-    db.add(update)
 
     await db.flush()
     logger.info(
